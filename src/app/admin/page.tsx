@@ -78,7 +78,8 @@ export default function AdminPage() {
       loadQueries();
     }
     init();
-  }, [router, supabase, loadStudents, loadModules, loadQueries]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router, loadStudents, loadModules, loadQueries]);
 
   // ── Student Actions ─────────────────────────────────────────
   async function approveStudent(studentId: string) {
