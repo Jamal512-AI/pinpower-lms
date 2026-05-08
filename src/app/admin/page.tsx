@@ -7,7 +7,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 type Student = { id: string; email: string; role: string; access_status: string; created_at: string; };
-type Module = { id: string; title: string; description: string; sort_order: number; };
+type Module = { id: string; title: string; description: string; sort_order: number; status?: string; };
 type ModuleVideo = { id: string; module_id: string; title: string; video_url: string; drive_email: string; sort_order: number; };
 type Query = { id: string; student_email: string; module_name: string; query_text: string; is_resolved: boolean; created_at: string; };
 
@@ -163,7 +163,7 @@ export default function AdminPage() {
       {/* Navbar */}
       <nav className="navbar">
         <a href="/admin" className="navbar-logo">
-          <Image src="/logo.png" alt="Pin Power" width={120} height={40} style={{ objectFit: 'contain' }} />
+          <img src="/logo.png" alt="Pin Power" style={{ width: 120, height: 'auto', objectFit: 'contain' }} />
         </a>
         <div className="navbar-actions">
           <span className="badge badge-admin">🛡️ Admin</span>
@@ -334,7 +334,14 @@ export default function AdminPage() {
                   >
                     <div className="admin-module-num">M{i + 1}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</div>
+                        {m.status === 'published' ? (
+                          <span style={{ fontSize: 10, background: 'rgba(16,185,129,0.1)', color: '#10b981', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>Published</span>
+                        ) : (
+                          <span style={{ fontSize: 10, background: 'rgba(255,255,255,0.1)', color: 'var(--text-muted)', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>Draft</span>
+                        )}
+                      </div>
                       {m.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{m.description.slice(0, 60)}{m.description.length > 60 ? '…' : ''}</div>}
                     </div>
                     <Link
