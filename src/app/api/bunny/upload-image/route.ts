@@ -68,12 +68,5 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Explicitly allow large bodies (Next.js 14+ API route config)
-export const config = {
-  api: {
-    bodyParser: false,          // we handle formData ourselves
-  },
-};
 
-// Increase the body size limit for serverless function
 export const maxDuration = 30;  // seconds
