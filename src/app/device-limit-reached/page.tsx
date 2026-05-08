@@ -16,7 +16,7 @@ export default function DeviceLimitPage() {
         </p>
         <div className="alert alert-error" style={{ textAlign: 'left', marginBottom: 24 }}>
           ⚠️ If you believe this is an error, please contact the admin team at{' '}
-          <strong>david5127214@gmail.com</strong>.
+          <strong>support@viralpinpower.com</strong>.
         </div>
         <button
           id="back-to-login-btn"
