@@ -72,6 +72,7 @@ export default function AdminChatPage() {
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [search, setSearch] = useState('');
+  const [authError, setAuthError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -82,10 +83,10 @@ export default function AdminChatPage() {
   // Auth check — admin only
   useEffect(() => {
     async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { window.location.href = '/login'; return; }
-      const { data: profile } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
-      if (!profile || profile.role !== 'admin') { window.location.href = '/login'; return; }
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (!user) { setAuthError(`NO_USER: ${userError?.message || 'Session not found'}`); return; }
+      const { data: profile, error } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
+      if (!profile || profile.role !== 'admin') { setAuthError(`NOT_ADMIN: Profile role is ${profile?.role || 'None'}. Error: ${error?.message || 'Unknown'}`); return; }
       setAdminEmail(user.email!);
     }
     init();
@@ -222,6 +223,16 @@ export default function AdminChatPage() {
 
   const grouped = groupByDate(messages);
   const totalUnread = students.reduce((acc, s) => acc + s.unread_count, 0);
+
+  if (authError) {
+    return (
+      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: 'red', minHeight: '100vh' }}>
+        <h1>Admin Authentication Failed (Chat)</h1>
+        <p style={{ fontSize: 20 }}>{authError}</p>
+        <button onClick={() => { supabase.auth.signOut().then(() => window.location.href = '/login') }} style={{ marginTop: 20, padding: 10, cursor: 'pointer' }}>Sign Out & Try Again</button>
+      </div>
+    );
+  }
 
   return (
     <div className="admin-chat-page">
