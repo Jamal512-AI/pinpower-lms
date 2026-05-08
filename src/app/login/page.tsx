@@ -13,7 +13,7 @@ export default function LoginPage() {
 
   const [roleTab, setRoleTab] = useState<RoleTab>('student');
   const [view, setView] = useState<View>('login');
-  
+
   // Read err param from URL
   const [urlError, setUrlError] = useState('');
   useEffect(() => {
@@ -24,12 +24,12 @@ export default function LoginPage() {
       else if (errParam === 'no_profile') setUrlError('User profile missing. Contact support.');
       else if (errParam === 'not_admin') setUrlError('Access denied. You do not have admin privileges.');
       else setUrlError('An unknown error occurred.');
-      
+
       // Clean up the URL
       window.history.replaceState(null, '', '/login');
     }
   }, []);
-  
+
   const [showPassword, setShowPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
 
@@ -286,7 +286,7 @@ export default function LoginPage() {
             {/* ── SIGNUP FORM ── */}
             <form className="lp-form" onSubmit={handleSignup}>
               <h3 style={{ textAlign: 'center', marginBottom: '8px', color: 'var(--brand-blue-dark)' }}>Create Student Account</h3>
-              
+
               {signupError && (
                 <div className="lp-alert lp-alert-error">
                   <span>⚠️</span> {signupError}
@@ -364,7 +364,7 @@ export default function LoginPage() {
               >
                 {signupLoading ? <><span className="lp-spinner" /> Creating Account…</> : 'Create Account'}
               </button>
-              
+
               <button
                 type="button"
                 className="lp-btn lp-btn-outline"
