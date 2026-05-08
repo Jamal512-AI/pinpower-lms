@@ -69,9 +69,9 @@ export default function AdminPage() {
   useEffect(() => {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push('/login'); return; }
+      if (!user) { router.push('/admin-login'); return; }
       const { data: profile } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
-      if (!profile || profile.role !== 'admin') { router.push('/login'); return; }
+      if (!profile || profile.role !== 'admin') { router.push('/admin-login'); return; }
       setUserEmail(user.email!);
       loadStudents();
       loadModules();
@@ -149,7 +149,7 @@ export default function AdminPage() {
 
   async function handleLogout() {
     await supabase.auth.signOut();
-    router.push('/login');
+    router.push('/admin-login');
   }
 
   // ── Derived ─────────────────────────────────────────────────
