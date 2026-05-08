@@ -1,20 +1,29 @@
 import { createBrowserClient } from '@supabase/ssr';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Admin-only Supabase browser client.
+ * Admin-only Supabase browser client — MANUAL SINGLETON.
  *
- * Uses a separate storageKey ('sb-admin-auth-token') so that the admin
- * session is stored in a completely different localStorage slot than the
- * student session ('sb-auth-token'). This prevents the two sessions from
- * ever overwriting each other when admin and student are logged in
- * simultaneously in different tabs of the same browser.
+ * We cache the instance ourselves in a module-level variable so that:
+ *   1. Every admin page / component gets the exact same client object.
+ *   2. The client is created once, reads the token from localStorage once,
+ *      and keeps the session alive across navigations.
+ *   3. It never collides with the default student client because it uses
+ *      a separate storageKey ('sb-admin-auth-token').
+ *
+ * Using `isSingleton: false` tells @supabase/ssr NOT to reuse the default
+ * global singleton (which is the student client). We handle caching ourselves.
  */
-export function createAdminBrowserClient() {
-  return createBrowserClient(
+let _adminBrowserClient: SupabaseClient | null = null;
+
+export function createAdminBrowserClient(): SupabaseClient {
+  if (_adminBrowserClient) return _adminBrowserClient;
+
+  _adminBrowserClient = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      isSingleton: false,
+      isSingleton: false,        // don't merge with the student singleton
       cookieOptions: {
         name: 'sb-admin-auth',   // separate cookie name from student
       },
@@ -22,7 +31,10 @@ export function createAdminBrowserClient() {
         storageKey: 'sb-admin-auth-token',  // different localStorage key
         persistSession: true,
         autoRefreshToken: true,
+        detectSessionInUrl: false,  // admin never does OAuth redirects
       },
     }
   );
+
+  return _adminBrowserClient;
 }
