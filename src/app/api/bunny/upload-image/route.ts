@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminSupabaseClient } from '@/lib/supabase-server';
+import { getAdminSupabaseClient } from '@/lib/supabase-server';
+
+// Singleton — reused across concurrent requests
+const supabase = getAdminSupabaseClient();
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,8 +12,6 @@ export async function POST(req: NextRequest) {
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
-
-    const supabase = await createAdminSupabaseClient();
 
     // Generate unique filename
     const ext = file.name.split('.').pop() || 'jpg';
