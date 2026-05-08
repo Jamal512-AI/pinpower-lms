@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase';
+import { createAdminBrowserClient } from '@/lib/supabase-admin-client';
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = createAdminBrowserClient();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
