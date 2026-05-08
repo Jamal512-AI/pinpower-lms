@@ -83,9 +83,9 @@ export default function AdminChatPage() {
   useEffect(() => {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push('/login'); return; }
+      if (!user) { window.location.href = '/login'; return; }
       const { data: profile } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
-      if (!profile || profile.role !== 'admin') { router.push('/login'); return; }
+      if (!profile || profile.role !== 'admin') { window.location.href = '/login'; return; }
       setAdminEmail(user.email!);
     }
     init();
@@ -213,7 +213,7 @@ export default function AdminChatPage() {
 
   async function handleLogout() {
     await supabase.auth.signOut();
-    router.push('/login');
+    window.location.href = '/login';
   }
 
   const filteredStudents = students.filter(s =>
