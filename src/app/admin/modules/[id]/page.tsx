@@ -16,7 +16,7 @@ type ModuleVideo = {
 
 type ModuleData = {
   id: string; title: string; description: string;
-  sort_order: number; content: string;
+  sort_order: number; content: string; status: 'draft' | 'published';
 };
 
 export default function ModuleEditorPage() {
@@ -33,6 +33,7 @@ export default function ModuleEditorPage() {
   // Edit module info
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [editStatus, setEditStatus] = useState<'draft' | 'published'>('draft');
   const [infoSaving, setInfoSaving] = useState(false);
   const [infoMsg, setInfoMsg] = useState('');
 
@@ -73,6 +74,7 @@ export default function ModuleEditorPage() {
     setMod(found);
     setEditTitle(found.title);
     setEditDesc(found.description || '');
+    setEditStatus(found.status || 'draft');
     setEditorContent(found.content || '');
     setLoading(false);
   }, [moduleId]);
@@ -91,7 +93,7 @@ export default function ModuleEditorPage() {
     const res = await fetch('/api/modules', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: moduleId, title: editTitle, description: editDesc }),
+      body: JSON.stringify({ id: moduleId, title: editTitle, description: editDesc, status: editStatus }),
     });
     setInfoSaving(false);
     setInfoMsg(res.ok ? '✅ Saved!' : '❌ Save failed');
@@ -191,7 +193,7 @@ export default function ModuleEditorPage() {
       {/* Navbar */}
       <nav className="navbar">
         <a href="/admin" className="navbar-logo">
-          <Image src="/logo.png" alt="Pin Power" width={120} height={40} style={{ objectFit: 'contain' }} />
+          <img src="/logo.png" alt="Pin Power" style={{ width: 120, height: 'auto', objectFit: 'contain' }} />
         </a>
         <div className="navbar-actions">
           <a href="/admin" className="btn btn-sm btn-ghost" style={{ color: 'rgba(255,255,255,0.7)' }}>← Admin</a>
@@ -213,6 +215,25 @@ export default function ModuleEditorPage() {
             <div className="form-group" style={{ marginBottom: 12 }}>
               <label className="form-label">Description</label>
               <textarea className="form-input" rows={3} style={{ resize: 'vertical' }} value={editDesc} onChange={e => setEditDesc(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 16 }}>
+              <label className="form-label">Status</label>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  className={`btn btn-sm ${editStatus === 'draft' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setEditStatus('draft')}
+                >
+                  📝 Draft
+                </button>
+                <button
+                  className={`btn btn-sm ${editStatus === 'published' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setEditStatus('published')}
+                >
+                  🚀 Published
+                </button>
+              </div>
             </div>
             <button className="btn btn-primary btn-sm" onClick={saveInfo} disabled={infoSaving} style={{ width: '100%' }}>
               {infoSaving ? 'Saving…' : '💾 Save Info'}
