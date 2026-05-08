@@ -1,7 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    domains: ['player.vdocipher.com'],
+    remotePatterns: [
+      { protocol: 'https', hostname: 'player.vdocipher.com' },
+      { protocol: 'https', hostname: '*.supabase.co' },
+      { protocol: 'https', hostname: '*.supabase.in' },
+    ],
+  },
+  // Allow larger request bodies for image/video uploads
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10mb',
+    },
   },
 };
 
