@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { createClient } from '@/lib/supabase';
+import { createAdminBrowserClient } from '@/lib/supabase-admin-client';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 
@@ -23,7 +23,7 @@ export default function ModuleEditorPage() {
   const router = useRouter();
   const params = useParams();
   const moduleId = params.id as string;
-  const supabase = createClient();
+  const supabase = createAdminBrowserClient();
 
   const [mod, setMod] = useState<ModuleData | null>(null);
   const [videos, setVideos] = useState<ModuleVideo[]>([]);
