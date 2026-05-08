@@ -15,7 +15,11 @@ export function createClient(): SupabaseClient {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       isSingleton: false,
+      cookieOptions: {
+        name: 'sb-student-auth',
+      },
       auth: {
+        storageKey: 'sb-student-auth-token',
         persistSession: true,
         autoRefreshToken: true,
       },
