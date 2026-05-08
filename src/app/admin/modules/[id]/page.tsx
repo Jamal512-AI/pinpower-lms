@@ -29,6 +29,7 @@ export default function ModuleEditorPage() {
   const [videos, setVideos] = useState<ModuleVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   // Edit module info
   const [editTitle, setEditTitle] = useState('');
@@ -57,10 +58,10 @@ export default function ModuleEditorPage() {
   useEffect(() => {
     setMounted(true);
     async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push('/login'); return; }
-      const { data: profile } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
-      if (!profile || profile.role !== 'admin') { router.push('/login'); return; }
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (!user) { setAuthError(`NO_USER: ${userError?.message || 'Session not found'}`); return; }
+      const { data: profile, error } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
+      if (!profile || profile.role !== 'admin') { setAuthError(`NOT_ADMIN: Profile role is ${profile?.role || 'None'}. Error: ${error?.message || 'Unknown'}`); return; }
     }
     init();
   }, []);
@@ -187,6 +188,16 @@ export default function ModuleEditorPage() {
   }
 
   if (!mounted) return null;
+
+  if (authError) {
+    return (
+      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: 'red', minHeight: '100vh' }}>
+        <h1>Admin Authentication Failed (Module Editor)</h1>
+        <p style={{ fontSize: 20 }}>{authError}</p>
+        <button onClick={() => { supabase.auth.signOut().then(() => window.location.href = '/login') }} style={{ marginTop: 20, padding: 10, cursor: 'pointer' }}>Sign Out & Try Again</button>
+      </div>
+    );
+  }
 
   return (
     <div className="module-editor-page" suppressHydrationWarning>
