@@ -14,6 +14,7 @@ export function createClient(): SupabaseClient {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      isSingleton: false,
       auth: {
         persistSession: true,
         autoRefreshToken: true,
