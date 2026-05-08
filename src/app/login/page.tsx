@@ -154,21 +154,7 @@ export default function LoginPage() {
           <p className="lp-logo-tagline">Digital Dynasty Learning Portal</p>
         </div>
 
-        {/* Tabs */}
-        <div className="lp-tabs">
-          <button
-            className={`lp-tab ${tab === 'login' ? 'active' : ''}`}
-            onClick={() => { setTab('login'); setError(''); }}
-          >
-            Sign In
-          </button>
-          <button
-            className={`lp-tab ${tab === 'signup' ? 'active' : ''}`}
-            onClick={() => { setTab('signup'); setSignupError(''); }}
-          >
-            Create Account
-          </button>
-        </div>
+
 
         {/* ── LOGIN FORM ── */}
         {tab === 'login' && (
@@ -313,10 +299,28 @@ export default function LoginPage() {
           </form>
         )}
 
-        {/* Admin link */}
+        {/* Bottom Links */}
         <div className="lp-admin-link">
-          Admin?{' '}
-          <a href="/admin-login">Admin Portal →</a>
+          {tab === 'login' ? (
+            <div>
+              New to Pin Power?{' '}
+              <a href="#" onClick={(e) => { e.preventDefault(); setTab('signup'); setSignupError(''); }}>
+                Create Account →
+              </a>
+            </div>
+          ) : (
+            <div>
+              Already have an account?{' '}
+              <a href="#" onClick={(e) => { e.preventDefault(); setTab('login'); setError(''); }}>
+                Sign In →
+              </a>
+            </div>
+          )}
+          
+          <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+            Admin?{' '}
+            <a href="/admin-login">Admin Portal →</a>
+          </div>
         </div>
       </div>
     </div>
