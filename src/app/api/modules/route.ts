@@ -4,13 +4,19 @@ import { createAdminSupabaseClient } from '@/lib/supabase-server';
 // We store modules in Supabase (modules table) since Google Sheets API needs OAuth.
 // This is the modules CRUD API.
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const publishedOnly = searchParams.get('publishedOnly') === 'true';
+
     const supabase = await createAdminSupabaseClient();
-    const { data, error } = await supabase
-      .from('modules')
-      .select('*')
-      .order('sort_order', { ascending: true });
+    let query = supabase.from('modules').select('*').order('sort_order', { ascending: true });
+    
+    if (publishedOnly) {
+      query = query.eq('status', 'published');
+    }
+
+    const { data, error } = await query;
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ modules: data || [] });
@@ -24,13 +30,13 @@ export async function POST(req: NextRequest) {
   try {
     const supabase = await createAdminSupabaseClient();
     const body = await req.json();
-    const { title, description, sort_order } = body;
+    const { title, description, sort_order, status } = body;
 
     if (!title) return NextResponse.json({ error: 'Title is required' }, { status: 400 });
 
     const { data, error } = await supabase
       .from('modules')
-      .insert([{ title, description: description || '', sort_order: sort_order || 0 }])
+      .insert([{ title, description: description || '', sort_order: sort_order || 0, status: status || 'draft' }])
       .select()
       .single();
 
@@ -63,7 +69,7 @@ export async function PATCH(req: NextRequest) {
   try {
     const supabase = await createAdminSupabaseClient();
     const body = await req.json();
-    const { id, title, description, content } = body;
+    const { id, title, description, content, status } = body;
 
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
 
@@ -71,6 +77,7 @@ export async function PATCH(req: NextRequest) {
     if (title !== undefined) updateFields.title = title;
     if (description !== undefined) updateFields.description = description;
     if (content !== undefined) updateFields.content = content;
+    if (status !== undefined) updateFields.status = status;
 
     const { data, error } = await supabase
       .from('modules')
