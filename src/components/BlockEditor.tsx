@@ -278,28 +278,47 @@ export default function BlockEditor({ content, onChange, placeholder, readOnly =
     setUploadLabel('Uploading image…');
     setUploadProgress(10);
 
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
+    // Retry up to 2 times to handle cold-start timeouts
+    let lastError = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
 
-      setUploadProgress(40);
-      const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
-      setUploadProgress(80);
-      const data = await res.json();
+        setUploadProgress(20 + attempt * 30);
+        const res = await fetch('/api/upload-image', {
+          method: 'POST',
+          body: fd,
+        });
+        setUploadProgress(80);
+        const data = await res.json();
 
-      if (!res.ok) {
-        setUploadError(data.error || 'Image upload failed');
-      } else {
-        setUploadProgress(100);
-        editor.chain().focus().setImage({ src: data.url, alt: file.name }).run();
-        onChange(editor.getHTML());
-        setUploadSuccess('✅ Image uploaded!');
-        setTimeout(() => setUploadSuccess(''), 3000);
+        if (!res.ok) {
+          lastError = data.error || 'Image upload failed';
+          // If it's a server error (5xx), retry
+          if (res.status >= 500 && attempt < 1) {
+            setUploadLabel('Retrying upload…');
+            continue;
+          }
+          setUploadError(lastError);
+        } else {
+          setUploadProgress(100);
+          editor.chain().focus().setImage({ src: data.url, alt: file.name }).run();
+          onChange(editor.getHTML());
+          setUploadSuccess('✅ Image uploaded!');
+          setTimeout(() => setUploadSuccess(''), 3000);
+          lastError = '';
+        }
+        break; // success or non-retryable error
+      } catch {
+        lastError = 'Network error. Retrying…';
+        if (attempt >= 1) {
+          lastError = 'Network error. Please check your connection and try again.';
+        }
       }
-    } catch {
-      setUploadError('Network error. Please try again.');
     }
 
+    if (lastError) setUploadError(lastError);
     setUploading(false);
     setUploadProgress(0);
     if (imageInputRef.current) imageInputRef.current.value = '';
