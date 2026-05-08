@@ -4,13 +4,16 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'login' | 'signup';
+type RoleTab = 'student' | 'admin';
+type View = 'login' | 'signup';
 
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [tab, setTab] = useState<Tab>('login');
+  const [roleTab, setRoleTab] = useState<RoleTab>('student');
+  const [view, setView] = useState<View>('login');
+  
   const [showPassword, setShowPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
 
@@ -45,18 +48,25 @@ export default function LoginPage() {
         .single();
 
       if (!profile) {
-        setError('Profile not found. Contact support@viralpinpower.com');
+        setError('Profile not found. Contact support.');
+        setLoading(false);
+        return;
+      }
+
+      // Role check based on tab
+      if (roleTab === 'admin' && profile.role !== 'admin') {
+        await supabase.auth.signOut();
+        setError('You do not have admin privileges.');
         setLoading(false);
         return;
       }
 
       if (profile.role === 'admin') {
-        await supabase.auth.signOut();
-        setError('Admin accounts must use the Admin Portal to sign in.');
-        setLoading(false);
+        router.push('/admin');
         return;
       }
 
+      // Student device check
       const FingerprintJS = (await import('@fingerprintjs/fingerprintjs')).default;
       const fp = await FingerprintJS.load();
       const result = await fp.get();
@@ -131,7 +141,7 @@ export default function LoginPage() {
           <button
             className="lp-btn lp-btn-outline"
             style={{ marginTop: 24 }}
-            onClick={() => { setSignupSuccess(false); setTab('login'); }}
+            onClick={() => { setSignupSuccess(false); setView('login'); }}
           >
             ← Back to Login
           </button>
@@ -151,177 +161,205 @@ export default function LoginPage() {
           <div className="lp-logo-wordmark">
             Pin <span>Power</span>
           </div>
-          <p className="lp-logo-tagline">Digital Dynasty Learning Portal</p>
+          <p className="lp-logo-tagline">Sign in to access your Digital Dynasty courses</p>
         </div>
 
-
-
-        {/* ── LOGIN FORM ── */}
-        {tab === 'login' && (
-          <form className="lp-form" onSubmit={handleLogin}>
-            {error && (
-              <div className="lp-alert lp-alert-error">
-                <span>⚠️</span> {error}
-              </div>
-            )}
-
-            <div className="lp-field">
-              <label className="lp-label" htmlFor="login-email">Email Address</label>
-              <div className="lp-input-wrap">
-                <span className="lp-input-icon">✉️</span>
-                <input
-                  id="login-email"
-                  type="email"
-                  className="lp-input"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required
-                />
-              </div>
+        {view === 'login' && (
+          <>
+            {/* Role Tabs */}
+            <div className="lp-tabs">
+              <button
+                type="button"
+                className={`lp-tab ${roleTab === 'student' ? 'active' : ''}`}
+                onClick={() => { setRoleTab('student'); setError(''); }}
+              >
+                🎓 Student
+              </button>
+              <button
+                type="button"
+                className={`lp-tab ${roleTab === 'admin' ? 'active' : ''}`}
+                onClick={() => { setRoleTab('admin'); setError(''); }}
+              >
+                🛡️ Admin
+              </button>
             </div>
 
-            <div className="lp-field">
-              <label className="lp-label" htmlFor="login-password">Password</label>
-              <div className="lp-input-wrap">
-                <span className="lp-input-icon">🔒</span>
-                <input
-                  id="login-password"
-                  type={showPassword ? 'text' : 'password'}
-                  className="lp-input"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                />
+            {/* ── LOGIN FORM ── */}
+            <form className="lp-form" onSubmit={handleLogin}>
+              {error && (
+                <div className="lp-alert lp-alert-error">
+                  <span>⚠️</span> {error}
+                </div>
+              )}
+
+              <div className="lp-field">
+                <label className="lp-label" htmlFor="login-email" style={{ textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px', color: 'var(--text-secondary)' }}>Email Address</label>
+                <div className="lp-input-wrap">
+                  <input
+                    id="login-email"
+                    type="email"
+                    className="lp-input"
+                    style={{ paddingLeft: '16px' }}
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="lp-field">
+                <label className="lp-label" htmlFor="login-password" style={{ textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px', color: 'var(--text-secondary)' }}>Password</label>
+                <div className="lp-input-wrap">
+                  <input
+                    id="login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    className="lp-input"
+                    style={{ paddingLeft: '16px' }}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="lp-eye-btn"
+                    tabIndex={-1}
+                    onClick={() => setShowPassword(v => !v)}
+                    aria-label="Toggle password"
+                  >
+                    {showPassword ? '🙈' : '👁️'}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                id="login-btn"
+                type="submit"
+                className="lp-btn"
+                style={{ background: 'var(--accent)', color: 'white', marginTop: '16px', boxShadow: '0 4px 12px rgba(255,42,85,0.3)' }}
+                disabled={loading}
+              >
+                {loading ? <><span className="lp-spinner" /> Signing in…</> : `Sign in as ${roleTab === 'student' ? 'Student' : 'Admin'}`}
+              </button>
+            </form>
+
+            {roleTab === 'student' && (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', margin: '24px 0', color: 'var(--border)' }}>
+                  <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                  <span style={{ padding: '0 12px', fontSize: '12px', color: 'var(--text-muted)' }}>or</span>
+                  <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                </div>
+
                 <button
                   type="button"
-                  className="lp-eye-btn"
-                  tabIndex={-1}
-                  onClick={() => setShowPassword(v => !v)}
-                  aria-label="Toggle password"
+                  className="lp-btn lp-btn-outline"
+                  style={{ width: '100%', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                  onClick={() => setView('signup')}
                 >
-                  {showPassword ? '🙈' : '👁️'}
+                  Create a new student account
                 </button>
-              </div>
-            </div>
-
-            <button
-              id="login-btn"
-              type="submit"
-              className="lp-btn lp-btn-primary"
-              disabled={loading}
-            >
-              {loading ? <><span className="lp-spinner" /> Signing in…</> : 'Sign In →'}
-            </button>
-          </form>
-        )}
-
-        {/* ── SIGNUP FORM ── */}
-        {tab === 'signup' && (
-          <form className="lp-form" onSubmit={handleSignup}>
-            {signupError && (
-              <div className="lp-alert lp-alert-error">
-                <span>⚠️</span> {signupError}
-              </div>
+              </>
             )}
-
-            <div className="lp-field">
-              <label className="lp-label" htmlFor="signup-name">Full Name</label>
-              <div className="lp-input-wrap">
-                <span className="lp-input-icon">👤</span>
-                <input
-                  id="signup-name"
-                  type="text"
-                  className="lp-input"
-                  placeholder="Your full name"
-                  value={signupName}
-                  onChange={e => setSignupName(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="lp-field">
-              <label className="lp-label" htmlFor="signup-email">Email Address</label>
-              <div className="lp-input-wrap">
-                <span className="lp-input-icon">✉️</span>
-                <input
-                  id="signup-email"
-                  type="email"
-                  className="lp-input"
-                  placeholder="you@example.com"
-                  value={signupEmail}
-                  onChange={e => setSignupEmail(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="lp-field">
-              <label className="lp-label" htmlFor="signup-password">Password</label>
-              <div className="lp-input-wrap">
-                <span className="lp-input-icon">🔒</span>
-                <input
-                  id="signup-password"
-                  type={showSignupPassword ? 'text' : 'password'}
-                  className="lp-input"
-                  placeholder="Minimum 8 characters"
-                  value={signupPassword}
-                  onChange={e => setSignupPassword(e.target.value)}
-                  minLength={8}
-                  required
-                />
-                <button
-                  type="button"
-                  className="lp-eye-btn"
-                  tabIndex={-1}
-                  onClick={() => setShowSignupPassword(v => !v)}
-                  aria-label="Toggle password"
-                >
-                  {showSignupPassword ? '🙈' : '👁️'}
-                </button>
-              </div>
-            </div>
-
-            <div className="lp-info-box" style={{ fontSize: 13, marginTop: -4 }}>
-              🛡️ Admin approval required before you can access courses.
-            </div>
-
-            <button
-              id="signup-btn"
-              type="submit"
-              className="lp-btn lp-btn-primary"
-              disabled={signupLoading}
-            >
-              {signupLoading ? <><span className="lp-spinner" /> Creating Account…</> : 'Create Account →'}
-            </button>
-          </form>
+          </>
         )}
 
-        {/* Bottom Links */}
-        <div className="lp-admin-link">
-          {tab === 'login' ? (
-            <div>
-              New to Pin Power?{' '}
-              <a href="#" onClick={(e) => { e.preventDefault(); setTab('signup'); setSignupError(''); }}>
-                Create Account →
-              </a>
-            </div>
-          ) : (
-            <div>
-              Already have an account?{' '}
-              <a href="#" onClick={(e) => { e.preventDefault(); setTab('login'); setError(''); }}>
-                Sign In →
-              </a>
-            </div>
-          )}
-          
-          <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-            Admin?{' '}
-            <a href="/admin-login">Admin Portal →</a>
-          </div>
-        </div>
+        {view === 'signup' && (
+          <>
+            {/* ── SIGNUP FORM ── */}
+            <form className="lp-form" onSubmit={handleSignup}>
+              <h3 style={{ textAlign: 'center', marginBottom: '8px', color: 'var(--brand-blue-dark)' }}>Create Student Account</h3>
+              
+              {signupError && (
+                <div className="lp-alert lp-alert-error">
+                  <span>⚠️</span> {signupError}
+                </div>
+              )}
+
+              <div className="lp-field">
+                <label className="lp-label" htmlFor="signup-name" style={{ textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px', color: 'var(--text-secondary)' }}>Full Name</label>
+                <div className="lp-input-wrap">
+                  <input
+                    id="signup-name"
+                    type="text"
+                    className="lp-input"
+                    style={{ paddingLeft: '16px' }}
+                    placeholder="Your full name"
+                    value={signupName}
+                    onChange={e => setSignupName(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="lp-field">
+                <label className="lp-label" htmlFor="signup-email" style={{ textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px', color: 'var(--text-secondary)' }}>Email Address</label>
+                <div className="lp-input-wrap">
+                  <input
+                    id="signup-email"
+                    type="email"
+                    className="lp-input"
+                    style={{ paddingLeft: '16px' }}
+                    placeholder="you@example.com"
+                    value={signupEmail}
+                    onChange={e => setSignupEmail(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="lp-field">
+                <label className="lp-label" htmlFor="signup-password" style={{ textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px', color: 'var(--text-secondary)' }}>Password</label>
+                <div className="lp-input-wrap">
+                  <input
+                    id="signup-password"
+                    type={showSignupPassword ? 'text' : 'password'}
+                    className="lp-input"
+                    style={{ paddingLeft: '16px' }}
+                    placeholder="Minimum 8 characters"
+                    value={signupPassword}
+                    onChange={e => setSignupPassword(e.target.value)}
+                    minLength={8}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="lp-eye-btn"
+                    tabIndex={-1}
+                    onClick={() => setShowSignupPassword(v => !v)}
+                    aria-label="Toggle password"
+                  >
+                    {showSignupPassword ? '🙈' : '👁️'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="lp-info-box" style={{ fontSize: 13, marginTop: -4 }}>
+                🛡️ Admin approval required before you can access courses.
+              </div>
+
+              <button
+                id="signup-btn"
+                type="submit"
+                className="lp-btn"
+                style={{ background: 'var(--accent)', color: 'white', marginTop: '8px', boxShadow: '0 4px 12px rgba(255,42,85,0.3)' }}
+                disabled={signupLoading}
+              >
+                {signupLoading ? <><span className="lp-spinner" /> Creating Account…</> : 'Create Account'}
+              </button>
+              
+              <button
+                type="button"
+                className="lp-btn lp-btn-outline"
+                style={{ width: '100%', borderColor: 'transparent', color: 'var(--text-secondary)', marginTop: '0' }}
+                onClick={() => setView('login')}
+              >
+                ← Back to Sign In
+              </button>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );
