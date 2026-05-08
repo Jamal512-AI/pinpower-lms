@@ -62,7 +62,7 @@ export default function LoginPage() {
       }
 
       if (profile.role === 'admin') {
-        router.push('/admin');
+        window.location.href = '/admin';
         return;
       }
 
@@ -85,8 +85,8 @@ export default function LoginPage() {
         return;
       }
 
-      if (profile.access_status === 'pending') { router.push('/waiting-room'); return; }
-      router.push('/dashboard');
+      if (profile.access_status === 'pending') { window.location.href = '/waiting-room'; return; }
+      window.location.href = '/dashboard';
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.';
       setError(message);
