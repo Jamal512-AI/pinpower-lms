@@ -255,7 +255,7 @@ export default function BlockEditor({ content, onChange, placeholder, readOnly =
     const fd = new FormData();
     fd.append('file', file);
 
-    const res = await fetch('/api/bunny/upload-image', { method: 'POST', body: fd });
+    const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
     const data = await res.json();
 
     if (!res.ok) {
