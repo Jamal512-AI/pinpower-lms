@@ -1,16 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminSupabaseClient } from '@/lib/supabase-server';
 
-// Singleton — reused across concurrent requests
-const supabase = getAdminSupabaseClient();
-
+/**
+ * POST /api/upload-image
+ * Accepts multipart form-data with a 'file' field.
+ * Uploads to Supabase Storage bucket 'module-images' and returns the public URL.
+ */
 export async function POST(req: NextRequest) {
   try {
+    // Lazily grab the singleton — avoids issues if env vars aren't ready at
+    // module-evaluation time on some platforms (Vercel edge bundling).
+    const supabase = getAdminSupabaseClient();
+
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    }
+
+    // Validate file type (images only)
+    if (!file.type.startsWith('image/')) {
+      return NextResponse.json({ error: 'Only image files are allowed' }, { status: 400 });
+    }
+
+    // Limit size to 10 MB
+    if (file.size > 10 * 1024 * 1024) {
+      return NextResponse.json({ error: 'File too large. Max 10 MB.' }, { status: 400 });
     }
 
     // Generate unique filename
@@ -22,16 +38,21 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
 
     // Upload to Supabase Storage (bucket: module-images)
-    const { error } = await supabase.storage
+    const { error: uploadError } = await supabase.storage
       .from('module-images')
       .upload(filename, buffer, {
-        cacheControl: '3600',
+        cacheControl: '31536000',      // 1 year cache
         upsert: false,
-        contentType: file.type,
+        contentType: file.type || 'image/jpeg',
+        duplex: 'half',                // required for streaming in some runtimes
       });
 
-    if (error) {
-      return NextResponse.json({ error: `Supabase upload failed: ${error.message}` }, { status: 500 });
+    if (uploadError) {
+      console.error('Supabase upload error:', uploadError);
+      return NextResponse.json(
+        { error: `Upload failed: ${uploadError.message}` },
+        { status: 500 }
+      );
     }
 
     // Get public URL
@@ -40,8 +61,19 @@ export async function POST(req: NextRequest) {
       .getPublicUrl(filename);
 
     return NextResponse.json({ url: publicUrlData.publicUrl });
-  } catch (err) {
-    console.error('Supabase image upload error:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  } catch (err: unknown) {
+    console.error('Image upload error:', err);
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+// Explicitly allow large bodies (Next.js 14+ API route config)
+export const config = {
+  api: {
+    bodyParser: false,          // we handle formData ourselves
+  },
+};
+
+// Increase the body size limit for serverless function
+export const maxDuration = 30;  // seconds
