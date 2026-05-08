@@ -291,7 +291,17 @@ export default function BlockEditor({ content, onChange, placeholder, readOnly =
           body: fd,
         });
         setUploadProgress(80);
-        const data = await res.json();
+        
+        // Handle non-JSON responses (like 413 Payload Too Large or 500 HTML)
+        const contentType = res.headers.get('content-type') || '';
+        let data: any = {};
+        if (contentType.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const text = await res.text();
+          data.error = res.status === 413 ? 'Image too large. Max size 4.5MB.' : `Server error (${res.status})`;
+          console.error('Non-JSON response:', text);
+        }
 
         if (!res.ok) {
           lastError = data.error || 'Image upload failed';
