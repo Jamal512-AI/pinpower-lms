@@ -3,15 +3,11 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
-import Image from 'next/image';
-
-type Tab = 'student' | 'admin';
 
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [tab, setTab] = useState<Tab>('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,13 +32,32 @@ export default function LoginPage() {
       if (authError) throw authError;
       if (!data.user) throw new Error('Login failed');
 
-      // FingerprintJS device check
+      // Check role first — block admins from using student portal
+      const { data: profile } = await supabase
+        .from('users_extended')
+        .select('role, access_status')
+        .eq('id', data.user.id)
+        .single();
+
+      if (!profile) {
+        setError('Profile not found. Contact support@viralpinpower.com');
+        setLoading(false);
+        return;
+      }
+
+      if (profile.role === 'admin') {
+        await supabase.auth.signOut();
+        setError('Admin accounts must use the Admin Portal to sign in.');
+        setLoading(false);
+        return;
+      }
+
+      // FingerprintJS device check (students only)
       const FingerprintJS = (await import('@fingerprintjs/fingerprintjs')).default;
       const fp = await FingerprintJS.load();
       const result = await fp.get();
       const fingerprint = result.visitorId;
 
-      // Call device check API
       const res = await fetch('/api/device-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -56,21 +71,6 @@ export default function LoginPage() {
         return;
       }
 
-      // Check role/status
-      const { data: profile } = await supabase
-        .from('users_extended')
-        .select('role, access_status')
-        .eq('id', data.user.id)
-        .single();
-
-      if (!profile) { setError('Profile not found. Contact admin.'); setLoading(false); return; }
-      if (tab === 'admin' && profile.role !== 'admin') {
-        await supabase.auth.signOut();
-        setError('This account does not have admin access.');
-        setLoading(false);
-        return;
-      }
-      if (profile.role === 'admin') { router.push('/admin'); return; }
       if (profile.access_status === 'pending') { router.push('/waiting-room'); return; }
       router.push('/dashboard');
     } catch (err: unknown) {
@@ -87,21 +87,19 @@ export default function LoginPage() {
     setSignupError('');
 
     try {
-      // Use our server-side API to create user (avoids "Error sending confirmation email")
       const signupRes = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: signupEmail, 
-          password: signupPassword, 
-          fullName: signupName 
+        body: JSON.stringify({
+          email: signupEmail,
+          password: signupPassword,
+          fullName: signupName
         }),
       });
-      
+
       const signupData = await signupRes.json();
       if (!signupRes.ok) throw new Error(signupData.error || 'Signup failed');
 
-      // Notify admin
       await fetch('/api/notify-admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -122,13 +120,12 @@ export default function LoginPage() {
       <div className="auth-page">
         <div className="auth-card">
           <div className="auth-logo">
-            <Image src="/logo.png" alt="Pin Power Logo" width={140} height={56} style={{ objectFit: 'contain' }} />
+            <img src="/logo.png" alt="Pin Power Logo" style={{ width: 140, height: 'auto', objectFit: 'contain' }} />
           </div>
           <div className="status-icon" style={{ textAlign: 'center' }}>🎉</div>
           <h2 className="auth-title">Registration Submitted!</h2>
           <p className="auth-subtitle" style={{ marginBottom: 24 }}>
             Your account is under review. You will be able to login once an admin approves your access.
-            Check back soon!
           </p>
           <div className="alert alert-info">
             📧 We've notified our admin team. Approval usually takes 24–48 hours.
@@ -150,8 +147,7 @@ export default function LoginPage() {
       <div className="auth-page">
         <div className="auth-card">
           <div className="auth-logo">
-            <Image src="/logo.png" alt="Pin Power Logo" width={140} height={56} style={{ objectFit: 'contain' }} />
-            <span className="auth-logo-text">Pin <span>Power</span></span>
+            <img src="/logo.png" alt="Pin Power Logo" style={{ width: 140, height: 'auto', objectFit: 'contain' }} />
           </div>
           <h2 className="auth-title">Create Student Account</h2>
           <p className="auth-subtitle">Join Digital Dynasty. Admin approval required.</p>
@@ -197,7 +193,7 @@ export default function LoginPage() {
               />
             </div>
             <button type="submit" className="btn btn-primary btn-full btn-lg" disabled={signupLoading}>
-              {signupLoading ? <><span className="loader"></span> Creating Account…</> : 'Create Account'}
+              {signupLoading ? <><span className="loader" />Creating Account…</> : 'Create Account'}
             </button>
           </form>
           <div className="auth-footer">
@@ -213,41 +209,23 @@ export default function LoginPage() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-logo">
-          <Image src="/logo.png" alt="Pin Power Logo" width={140} height={56} style={{ objectFit: 'contain' }} />
+          <img src="/logo.png" alt="Pin Power Logo" style={{ width: 140, height: 'auto', objectFit: 'contain' }} />
           <span className="auth-logo-text">Pin <span>Power</span></span>
         </div>
-        <p className="auth-subtitle">Sign in to access your Digital Dynasty courses</p>
 
-        {/* Role Toggle */}
-        <div className="auth-tabs">
-          <button
-            id="tab-student"
-            className={`auth-tab ${tab === 'student' ? 'active' : ''}`}
-            onClick={() => { setTab('student'); setError(''); }}
-          >
-            🎓 Student
-          </button>
-          <button
-            id="tab-admin"
-            className={`auth-tab ${tab === 'admin' ? 'active' : ''}`}
-            onClick={() => { setTab('admin'); setError(''); }}
-          >
-            🛡️ Admin
-          </button>
-        </div>
+        <h2 className="auth-title">🎓 Student Login</h2>
+        <p className="auth-subtitle">Sign in to access your Digital Dynasty courses</p>
 
         {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>⚠️ {error}</div>}
 
         <form className="auth-form" onSubmit={handleLogin}>
           <div className="form-group">
-            <label className="form-label" htmlFor="login-email">
-              {tab === 'admin' ? 'Admin Email' : 'Email Address'}
-            </label>
+            <label className="form-label" htmlFor="login-email">Email Address</label>
             <input
               id="login-email"
               type="email"
               className="form-input"
-              placeholder={tab === 'admin' ? 'admin@digitaldynasty.com' : 'you@example.com'}
+              placeholder="you@example.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
@@ -266,22 +244,28 @@ export default function LoginPage() {
             />
           </div>
           <button type="submit" id="login-btn" className="btn btn-primary btn-full btn-lg" disabled={loading}>
-            {loading ? <><span className="loader"></span> Signing in…</> : `Sign in as ${tab === 'admin' ? 'Admin' : 'Student'}`}
+            {loading ? <><span className="loader" />Signing in…</> : 'Sign In'}
           </button>
         </form>
 
-        {tab === 'student' && (
-          <>
-            <div className="auth-divider">or</div>
-            <button
-              id="signup-btn"
-              className="btn btn-ghost btn-full"
-              onClick={() => setShowSignup(true)}
-            >
-              Create a new student account
-            </button>
-          </>
-        )}
+        <>
+          <div className="auth-divider">or</div>
+          <button
+            id="signup-btn"
+            className="btn btn-ghost btn-full"
+            onClick={() => setShowSignup(true)}
+          >
+            Create a new student account
+          </button>
+        </>
+
+        {/* Subtle admin link */}
+        <div style={{ marginTop: 24, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
+          Admin?{' '}
+          <a href="/admin-login" style={{ color: 'var(--text-muted)', textDecoration: 'underline' }}>
+            Admin portal →
+          </a>
+        </div>
       </div>
     </div>
   );
