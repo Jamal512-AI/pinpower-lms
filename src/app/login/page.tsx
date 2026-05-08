@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 
@@ -13,6 +13,22 @@ export default function LoginPage() {
 
   const [roleTab, setRoleTab] = useState<RoleTab>('student');
   const [view, setView] = useState<View>('login');
+  
+  // Read err param from URL
+  const [urlError, setUrlError] = useState('');
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const errParam = searchParams.get('err');
+    if (errParam) {
+      if (errParam === 'no_user') setUrlError('Session expired or user not found. Please log in again.');
+      else if (errParam === 'no_profile') setUrlError('User profile missing. Contact support.');
+      else if (errParam === 'not_admin') setUrlError('Access denied. You do not have admin privileges.');
+      else setUrlError('An unknown error occurred.');
+      
+      // Clean up the URL
+      window.history.replaceState(null, '', '/login');
+    }
+  }, []);
   
   const [showPassword, setShowPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
@@ -186,9 +202,9 @@ export default function LoginPage() {
 
             {/* ── LOGIN FORM ── */}
             <form className="lp-form" onSubmit={handleLogin}>
-              {error && (
+              {(error || urlError) && (
                 <div className="lp-alert lp-alert-error">
-                  <span>⚠️</span> {error}
+                  <span>⚠️</span> {error || urlError}
                 </div>
               )}
 
