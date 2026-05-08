@@ -24,7 +24,7 @@
     "@tiptap/starter-kit": "^3.22.5",
     "@tiptap/core": "^3.22.5",
     "dotenv": "^17.4.2",
-    "next": "15.1.0",
+    "next": "15.1.11",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "resend": "^4.0.0",
