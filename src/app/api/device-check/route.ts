@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminSupabaseClient } from '@/lib/supabase-server';
+import { getAdminSupabaseClient } from '@/lib/supabase-server';
+
+// Use module-level singleton for performance under concurrent load
+const supabase = getAdminSupabaseClient();
 
 export async function POST(req: NextRequest) {
   try {
@@ -8,46 +11,51 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing params' }, { status: 400 });
     }
 
-    const supabase = await createAdminSupabaseClient();
+    // ─── Fetch devices + user profile in PARALLEL (2 queries → 1 round-trip) ──
+    const [devicesResult, profileResult] = await Promise.all([
+      supabase
+        .from('user_devices')
+        .select('device_fingerprint')
+        .eq('user_id', userId),
+      supabase
+        .from('users_extended')
+        .select('role')
+        .eq('id', userId)
+        .single(),
+    ]);
 
-    // Get existing devices for this user
-    const { data: devices, error } = await supabase
-      .from('user_devices')
-      .select('device_fingerprint')
-      .eq('user_id', userId);
+    if (devicesResult.error) {
+      return NextResponse.json({ error: devicesResult.error.message }, { status: 500 });
+    }
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const fingerprints = devicesResult.data?.map((d) => d.device_fingerprint) ?? [];
+    const role = profileResult.data?.role;
 
-    const fingerprints = devices?.map((d) => d.device_fingerprint) ?? [];
-
-    // Already registered — update last_login
+    // Already registered on this device — just update last_login (fire-and-forget)
     if (fingerprints.includes(fingerprint)) {
-      await supabase
+      supabase
         .from('user_devices')
         .update({ last_login: new Date().toISOString() })
         .eq('user_id', userId)
-        .eq('device_fingerprint', fingerprint);
+        .eq('device_fingerprint', fingerprint)
+        .then(() => {}); // non-blocking
       return NextResponse.json({ blocked: false });
     }
 
-    // Get user role to check if they are an admin
-    const { data: userProfile } = await supabase
-      .from('users_extended')
-      .select('role')
-      .eq('id', userId)
-      .single();
-
-    // New device — check limit (max 2) for students
-    if (userProfile?.role !== 'admin' && fingerprints.length >= 2) {
+    // New device — enforce 2-device limit for students only
+    if (role !== 'admin' && fingerprints.length >= 2) {
       return NextResponse.json({ blocked: true });
     }
 
-    // Register new device
-    await supabase.from('user_devices').insert({
-      user_id: userId,
-      device_fingerprint: fingerprint,
-      last_login: new Date().toISOString(),
-    });
+    // Register the new device (fire-and-forget for speed)
+    supabase
+      .from('user_devices')
+      .insert({
+        user_id: userId,
+        device_fingerprint: fingerprint,
+        last_login: new Date().toISOString(),
+      })
+      .then(() => {}); // non-blocking
 
     return NextResponse.json({ blocked: false });
   } catch (error) {
