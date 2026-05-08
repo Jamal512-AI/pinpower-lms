@@ -14,6 +14,7 @@ export function createAdminBrowserClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      isSingleton: false,
       cookieOptions: {
         name: 'sb-admin-auth',   // separate cookie name from student
       },
