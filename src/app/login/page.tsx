@@ -78,7 +78,9 @@ export default function LoginPage() {
       }
 
       if (profile.role === 'admin') {
-        window.location.href = '/admin';
+        setTimeout(() => {
+          window.location.href = '/admin';
+        }, 1000);
         return;
       }
 
