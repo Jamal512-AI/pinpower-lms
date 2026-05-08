@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase';
+import { createAdminBrowserClient } from '@/lib/supabase-admin-client';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -15,7 +15,7 @@ type Tab = 'students' | 'modules' | 'queries';
 
 export default function AdminPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = createAdminBrowserClient();
 
   const [tab, setTab] = useState<Tab>('students');
   const [userEmail, setUserEmail] = useState('');
