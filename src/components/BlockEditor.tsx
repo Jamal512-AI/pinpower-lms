@@ -11,7 +11,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import TextAlign from '@tiptap/extension-text-align';
 import { useCallback, useRef, useState } from 'react';
 
-// ─── Font Size via TextStyle marks ─────────────────────────
+// ─── Font Size Extension ────────────────────────────────────
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     fontSize: {
@@ -21,7 +21,6 @@ declare module '@tiptap/core' {
   }
 }
 
-// Simple font-size extension using TextStyle
 import { Extension } from '@tiptap/core';
 const FontSize = Extension.create({
   name: 'fontSize',
@@ -50,7 +49,7 @@ const FontSize = Extension.create({
   },
 });
 
-// ─── Toolbar Button ─────────────────────────────────────────
+// ─── Toolbar Button ──────────────────────────────────────────
 function ToolBtn({
   onClick, active, title, children, disabled
 }: {
@@ -70,10 +69,28 @@ function ToolBtn({
   );
 }
 
+// ─── Upload Progress Overlay ─────────────────────────────────
+function UploadOverlay({ visible, label, progress }: { visible: boolean; label: string; progress: number }) {
+  if (!visible) return null;
+  return (
+    <div className="editor-upload-overlay">
+      <div className="editor-upload-card">
+        <div className="editor-upload-spinner" />
+        <div className="editor-upload-label">{label}</div>
+        <div className="editor-upload-bar-wrap">
+          <div className="editor-upload-bar" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="editor-upload-pct">{progress}%</div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Toolbar ────────────────────────────────────────────────
-function EditorToolbar({ editor, onImageUpload, uploading }: {
+function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading }: {
   editor: Editor | null;
   onImageUpload: () => void;
+  onVideoUpload: () => void;
   uploading: boolean;
 }) {
   const [linkUrl, setLinkUrl] = useState('');
@@ -86,13 +103,6 @@ function EditorToolbar({ editor, onImageUpload, uploading }: {
     editor!.chain().focus().extendMarkRange('link').setLink({ href: linkUrl, target: '_blank' }).run();
     setLinkUrl('');
     setShowLink(false);
-  }
-
-  function changeFontSize(delta: number) {
-    const el = editor!.view.dom as HTMLElement;
-    const current = parseInt(window.getComputedStyle(el).fontSize) || 16;
-    const next = Math.max(10, Math.min(72, current + delta));
-    editor!.chain().focus().setMark('textStyle', { fontSize: String(next) }).run();
   }
 
   const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48];
@@ -122,7 +132,6 @@ function EditorToolbar({ editor, onImageUpload, uploading }: {
 
       {/* Font size */}
       <div className="editor-tool-group">
-        <ToolBtn title="Decrease font size" onClick={() => changeFontSize(-2)}>A−</ToolBtn>
         <select
           title="Font size"
           className="editor-font-select"
@@ -132,7 +141,6 @@ function EditorToolbar({ editor, onImageUpload, uploading }: {
           <option value="" disabled>Size</option>
           {FONT_SIZES.map(s => <option key={s} value={String(s)}>{s}px</option>)}
         </select>
-        <ToolBtn title="Increase font size" onClick={() => changeFontSize(2)}>A+</ToolBtn>
       </div>
 
       <div className="editor-tool-divider" />
@@ -190,10 +198,15 @@ function EditorToolbar({ editor, onImageUpload, uploading }: {
         )}
       </div>
 
-      {/* Image upload */}
+      <div className="editor-tool-divider" />
+
+      {/* Image + Video upload */}
       <div className="editor-tool-group">
-        <ToolBtn title="Upload image to Bunny CDN" onClick={onImageUpload} disabled={uploading}>
-          {uploading ? '⏳' : '🖼️'}
+        <ToolBtn title="Upload Image (Supabase)" onClick={onImageUpload} disabled={uploading}>
+          {uploading ? '⏳' : '🖼️ Image'}
+        </ToolBtn>
+        <ToolBtn title="Upload Video to Bunny Stream" onClick={onVideoUpload} disabled={uploading}>
+          {uploading ? '⏳' : '🎬 Video'}
         </ToolBtn>
       </div>
 
@@ -217,9 +230,14 @@ interface BlockEditorProps {
 }
 
 export default function BlockEditor({ content, onChange, placeholder, readOnly = false }: BlockEditorProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
   const [uploading, setUploading] = useState(false);
+  const [uploadLabel, setUploadLabel] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
+  const [uploadSuccess, setUploadSuccess] = useState('');
 
   const editor = useEditor({
     extensions: [
@@ -242,31 +260,103 @@ export default function BlockEditor({ content, onChange, placeholder, readOnly =
   });
 
   const triggerImageUpload = useCallback(() => {
-    fileInputRef.current?.click();
+    imageInputRef.current?.click();
   }, []);
 
+  const triggerVideoUpload = useCallback(() => {
+    videoInputRef.current?.click();
+  }, []);
+
+  // ── Image Upload → Supabase Storage ───────────────────────
   async function handleImageFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !editor) return;
 
     setUploading(true);
     setUploadError('');
+    setUploadSuccess('');
+    setUploadLabel('Uploading image…');
+    setUploadProgress(10);
 
-    const fd = new FormData();
-    fd.append('file', file);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
 
-    const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
-    const data = await res.json();
+      setUploadProgress(40);
+      const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
+      setUploadProgress(80);
+      const data = await res.json();
 
-    if (!res.ok) {
-      setUploadError(data.error || 'Upload failed');
-    } else {
-      editor.chain().focus().setImage({ src: data.url, alt: file.name }).run();
-      onChange(editor.getHTML()); // Force auto-save to Supabase immediately after inserting image
+      if (!res.ok) {
+        setUploadError(data.error || 'Image upload failed');
+      } else {
+        setUploadProgress(100);
+        editor.chain().focus().setImage({ src: data.url, alt: file.name }).run();
+        onChange(editor.getHTML());
+        setUploadSuccess('✅ Image uploaded!');
+        setTimeout(() => setUploadSuccess(''), 3000);
+      }
+    } catch {
+      setUploadError('Network error. Please try again.');
     }
 
     setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    setUploadProgress(0);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  }
+
+  // ── Video Upload → Bunny Stream ────────────────────────────
+  async function handleVideoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !editor) return;
+
+    setUploading(true);
+    setUploadError('');
+    setUploadSuccess('');
+    setUploadLabel(`Uploading video "${file.name}" to Bunny Stream…`);
+    setUploadProgress(5);
+
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('title', file.name.replace(/\.[^/.]+$/, ''));
+
+      // Simulate progress while waiting
+      const progressInterval = setInterval(() => {
+        setUploadProgress(p => Math.min(p + 3, 85));
+      }, 800);
+
+      const res = await fetch('/api/bunny/upload-video', { method: 'POST', body: fd });
+      clearInterval(progressInterval);
+      setUploadProgress(95);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setUploadError(data.error || 'Video upload failed. Check Bunny Stream API key.');
+      } else {
+        setUploadProgress(100);
+        // Embed the Bunny iframe into the editor content
+        const iframeHtml = `<div class="video-embed-block">
+  <iframe 
+    src="${data.embedUrl}" 
+    frameborder="0" 
+    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" 
+    allowfullscreen
+    style="width:100%; height:480px; border-radius:10px;"
+  ></iframe>
+</div>`;
+        editor.chain().focus().insertContent(iframeHtml).run();
+        onChange(editor.getHTML());
+        setUploadSuccess(`✅ Video uploaded to Bunny Stream!`);
+        setTimeout(() => setUploadSuccess(''), 4000);
+      }
+    } catch {
+      setUploadError('Network error uploading video. Please try again.');
+    }
+
+    setUploading(false);
+    setUploadProgress(0);
+    if (videoInputRef.current) videoInputRef.current.value = '';
   }
 
   if (readOnly) {
@@ -279,20 +369,44 @@ export default function BlockEditor({ content, onChange, placeholder, readOnly =
   }
 
   return (
-    <div className="block-editor-wrap">
-      <EditorToolbar editor={editor} onImageUpload={triggerImageUpload} uploading={uploading} />
+    <div className="block-editor-wrap" style={{ position: 'relative' }}>
+      <UploadOverlay visible={uploading} label={uploadLabel} progress={uploadProgress} />
+
+      <EditorToolbar
+        editor={editor}
+        onImageUpload={triggerImageUpload}
+        onVideoUpload={triggerVideoUpload}
+        uploading={uploading}
+      />
+
       <EditorContent editor={editor} className="editor-content-area" />
+
+      {/* Status messages */}
       {uploadError && (
-        <div className="alert alert-error" style={{ marginTop: 8, fontSize: 13 }}>
-          ❌ Image upload failed: {uploadError}
+        <div className="editor-status editor-status-error">
+          ❌ {uploadError}
         </div>
       )}
+      {uploadSuccess && (
+        <div className="editor-status editor-status-success">
+          {uploadSuccess}
+        </div>
+      )}
+
+      {/* Hidden file inputs */}
       <input
-        ref={fileInputRef}
+        ref={imageInputRef}
         type="file"
         accept="image/*"
         style={{ display: 'none' }}
         onChange={handleImageFile}
+      />
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept="video/*"
+        style={{ display: 'none' }}
+        onChange={handleVideoFile}
       />
     </div>
   );
