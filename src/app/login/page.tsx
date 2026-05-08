@@ -4,17 +4,23 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 
+type Tab = 'login' | 'signup';
+
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
 
+  const [tab, setTab] = useState<Tab>('login');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+
+  // Login state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   // Signup state
-  const [showSignup, setShowSignup] = useState(false);
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupName, setSignupName] = useState('');
@@ -32,7 +38,6 @@ export default function LoginPage() {
       if (authError) throw authError;
       if (!data.user) throw new Error('Login failed');
 
-      // Check role first — block admins from using student portal
       const { data: profile } = await supabase
         .from('users_extended')
         .select('role, access_status')
@@ -52,7 +57,6 @@ export default function LoginPage() {
         return;
       }
 
-      // FingerprintJS device check (students only)
       const FingerprintJS = (await import('@fingerprintjs/fingerprintjs')).default;
       const fp = await FingerprintJS.load();
       const result = await fp.get();
@@ -90,13 +94,8 @@ export default function LoginPage() {
       const signupRes = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: signupEmail,
-          password: signupPassword,
-          fullName: signupName
-        }),
+        body: JSON.stringify({ email: signupEmail, password: signupPassword, fullName: signupName }),
       });
-
       const signupData = await signupRes.json();
       if (!signupRes.ok) throw new Error(signupData.error || 'Signup failed');
 
@@ -115,158 +114,221 @@ export default function LoginPage() {
     }
   }
 
+  // ── Success screen ──────────────────────────────────────────
   if (signupSuccess) {
     return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <div className="auth-logo">
-            <img src="/logo.png" alt="Pin Power Logo" style={{ width: 140, height: 'auto', objectFit: 'contain' }} />
-          </div>
-          <div className="status-icon" style={{ textAlign: 'center' }}>🎉</div>
-          <h2 className="auth-title">Registration Submitted!</h2>
-          <p className="auth-subtitle" style={{ marginBottom: 24 }}>
-            Your account is under review. You will be able to login once an admin approves your access.
+      <div className="lp-bg">
+        <Orbs />
+        <div className="lp-card">
+          <div className="lp-success-icon">🎉</div>
+          <h2 className="lp-success-title">You&apos;re on the list!</h2>
+          <p className="lp-success-sub">
+            Your account is under review. We&apos;ll notify you once an admin approves your access.
           </p>
-          <div className="alert alert-info">
-            📧 We've notified our admin team. Approval usually takes 24–48 hours.
+          <div className="lp-info-box">
+            📧 Admin has been notified. Approval usually takes <strong>24–48 hours</strong>.
           </div>
           <button
-            className="btn btn-outline btn-full"
-            style={{ marginTop: 20 }}
-            onClick={() => { setSignupSuccess(false); setShowSignup(false); }}
+            className="lp-btn lp-btn-outline"
+            style={{ marginTop: 24 }}
+            onClick={() => { setSignupSuccess(false); setTab('login'); }}
           >
-            Back to Login
+            ← Back to Login
           </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (showSignup) {
-    return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <div className="auth-logo">
-            <img src="/logo.png" alt="Pin Power Logo" style={{ width: 140, height: 'auto', objectFit: 'contain' }} />
-          </div>
-          <h2 className="auth-title">Create Student Account</h2>
-          <p className="auth-subtitle">Join Digital Dynasty. Admin approval required.</p>
-
-          {signupError && <div className="alert alert-error" style={{ marginBottom: 16 }}>⚠️ {signupError}</div>}
-
-          <form className="auth-form" onSubmit={handleSignup}>
-            <div className="form-group">
-              <label className="form-label" htmlFor="signup-name">Full Name</label>
-              <input
-                id="signup-name"
-                type="text"
-                className="form-input"
-                placeholder="Your full name"
-                value={signupName}
-                onChange={e => setSignupName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="signup-email">Email Address</label>
-              <input
-                id="signup-email"
-                type="email"
-                className="form-input"
-                placeholder="you@example.com"
-                value={signupEmail}
-                onChange={e => setSignupEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="signup-password">Password</label>
-              <input
-                id="signup-password"
-                type="password"
-                className="form-input"
-                placeholder="Minimum 8 characters"
-                value={signupPassword}
-                onChange={e => setSignupPassword(e.target.value)}
-                minLength={8}
-                required
-              />
-            </div>
-            <button type="submit" className="btn btn-primary btn-full btn-lg" disabled={signupLoading}>
-              {signupLoading ? <><span className="loader" />Creating Account…</> : 'Create Account'}
-            </button>
-          </form>
-          <div className="auth-footer">
-            Already have an account?{' '}
-            <a href="#" onClick={e => { e.preventDefault(); setShowSignup(false); }}>Sign in</a>
-          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <div className="auth-logo">
-          <img src="/logo.png" alt="Pin Power Logo" style={{ width: 140, height: 'auto', objectFit: 'contain' }} />
-          <span className="auth-logo-text">Pin <span>Power</span></span>
+    <div className="lp-bg">
+      <Orbs />
+
+      <div className="lp-card">
+        {/* Logo */}
+        <div className="lp-logo">
+          <img src="/logo.png" alt="Pin Power" className="lp-logo-img" />
+          <div className="lp-logo-wordmark">
+            Pin <span>Power</span>
+          </div>
+          <p className="lp-logo-tagline">Digital Dynasty Learning Portal</p>
         </div>
 
-        <h2 className="auth-title">🎓 Student Login</h2>
-        <p className="auth-subtitle">Sign in to access your Digital Dynasty courses</p>
-
-        {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>⚠️ {error}</div>}
-
-        <form className="auth-form" onSubmit={handleLogin}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="login-email">Email Address</label>
-            <input
-              id="login-email"
-              type="email"
-              className="form-input"
-              placeholder="you@example.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="login-password">Password</label>
-            <input
-              id="login-password"
-              type="password"
-              className="form-input"
-              placeholder="Enter your password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          <button type="submit" id="login-btn" className="btn btn-primary btn-full btn-lg" disabled={loading}>
-            {loading ? <><span className="loader" />Signing in…</> : 'Sign In'}
-          </button>
-        </form>
-
-        <>
-          <div className="auth-divider">or</div>
+        {/* Tabs */}
+        <div className="lp-tabs">
           <button
-            id="signup-btn"
-            className="btn btn-ghost btn-full"
-            onClick={() => setShowSignup(true)}
+            className={`lp-tab ${tab === 'login' ? 'active' : ''}`}
+            onClick={() => { setTab('login'); setError(''); }}
           >
-            Create a new student account
+            Sign In
           </button>
-        </>
+          <button
+            className={`lp-tab ${tab === 'signup' ? 'active' : ''}`}
+            onClick={() => { setTab('signup'); setSignupError(''); }}
+          >
+            Create Account
+          </button>
+        </div>
 
-        {/* Subtle admin link */}
-        <div style={{ marginTop: 24, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
+        {/* ── LOGIN FORM ── */}
+        {tab === 'login' && (
+          <form className="lp-form" onSubmit={handleLogin}>
+            {error && (
+              <div className="lp-alert lp-alert-error">
+                <span>⚠️</span> {error}
+              </div>
+            )}
+
+            <div className="lp-field">
+              <label className="lp-label" htmlFor="login-email">Email Address</label>
+              <div className="lp-input-wrap">
+                <span className="lp-input-icon">✉️</span>
+                <input
+                  id="login-email"
+                  type="email"
+                  className="lp-input"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="lp-field">
+              <label className="lp-label" htmlFor="login-password">Password</label>
+              <div className="lp-input-wrap">
+                <span className="lp-input-icon">🔒</span>
+                <input
+                  id="login-password"
+                  type={showPassword ? 'text' : 'password'}
+                  className="lp-input"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  className="lp-eye-btn"
+                  tabIndex={-1}
+                  onClick={() => setShowPassword(v => !v)}
+                  aria-label="Toggle password"
+                >
+                  {showPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+
+            <button
+              id="login-btn"
+              type="submit"
+              className="lp-btn lp-btn-primary"
+              disabled={loading}
+            >
+              {loading ? <><span className="lp-spinner" /> Signing in…</> : 'Sign In →'}
+            </button>
+          </form>
+        )}
+
+        {/* ── SIGNUP FORM ── */}
+        {tab === 'signup' && (
+          <form className="lp-form" onSubmit={handleSignup}>
+            {signupError && (
+              <div className="lp-alert lp-alert-error">
+                <span>⚠️</span> {signupError}
+              </div>
+            )}
+
+            <div className="lp-field">
+              <label className="lp-label" htmlFor="signup-name">Full Name</label>
+              <div className="lp-input-wrap">
+                <span className="lp-input-icon">👤</span>
+                <input
+                  id="signup-name"
+                  type="text"
+                  className="lp-input"
+                  placeholder="Your full name"
+                  value={signupName}
+                  onChange={e => setSignupName(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="lp-field">
+              <label className="lp-label" htmlFor="signup-email">Email Address</label>
+              <div className="lp-input-wrap">
+                <span className="lp-input-icon">✉️</span>
+                <input
+                  id="signup-email"
+                  type="email"
+                  className="lp-input"
+                  placeholder="you@example.com"
+                  value={signupEmail}
+                  onChange={e => setSignupEmail(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="lp-field">
+              <label className="lp-label" htmlFor="signup-password">Password</label>
+              <div className="lp-input-wrap">
+                <span className="lp-input-icon">🔒</span>
+                <input
+                  id="signup-password"
+                  type={showSignupPassword ? 'text' : 'password'}
+                  className="lp-input"
+                  placeholder="Minimum 8 characters"
+                  value={signupPassword}
+                  onChange={e => setSignupPassword(e.target.value)}
+                  minLength={8}
+                  required
+                />
+                <button
+                  type="button"
+                  className="lp-eye-btn"
+                  tabIndex={-1}
+                  onClick={() => setShowSignupPassword(v => !v)}
+                  aria-label="Toggle password"
+                >
+                  {showSignupPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+
+            <div className="lp-info-box" style={{ fontSize: 13, marginTop: -4 }}>
+              🛡️ Admin approval required before you can access courses.
+            </div>
+
+            <button
+              id="signup-btn"
+              type="submit"
+              className="lp-btn lp-btn-primary"
+              disabled={signupLoading}
+            >
+              {signupLoading ? <><span className="lp-spinner" /> Creating Account…</> : 'Create Account →'}
+            </button>
+          </form>
+        )}
+
+        {/* Admin link */}
+        <div className="lp-admin-link">
           Admin?{' '}
-          <a href="/admin-login" style={{ color: 'var(--text-muted)', textDecoration: 'underline' }}>
-            Admin portal →
-          </a>
+          <a href="/admin-login">Admin Portal →</a>
         </div>
       </div>
     </div>
+  );
+}
+
+function Orbs() {
+  return (
+    <>
+      <div className="lp-orb lp-orb-1" />
+      <div className="lp-orb lp-orb-2" />
+      <div className="lp-orb lp-orb-3" />
+    </>
   );
 }
