@@ -67,7 +67,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function loadModules() {
-      const res = await fetch('/api/modules');
+      const res = await fetch('/api/modules?publishedOnly=true');
       const data = await res.json();
       const mods: Module[] = data.modules || [];
       setModules(mods);
@@ -204,7 +204,7 @@ export default function DashboardPage() {
       {/* Navbar */}
       <nav className="navbar">
         <a href="/dashboard" className="navbar-logo">
-          <Image src="/logo.png" alt="Pin Power" width={120} height={40} style={{ objectFit: 'contain' }} />
+          <img src="/logo.png" alt="Pin Power" style={{ width: 120, height: 'auto', objectFit: 'contain' }} />
         </a>
         <div className="navbar-actions">
           <div className="navbar-user">
