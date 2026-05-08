@@ -16,12 +16,17 @@ export async function POST(req: NextRequest) {
     const ext = file.name.split('.').pop() || 'jpg';
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
+    // Convert Web File to Buffer for reliable Node.js Supabase upload
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
     // Upload to Supabase Storage (bucket: module-images)
     const { error } = await supabase.storage
       .from('module-images')
-      .upload(filename, file, {
+      .upload(filename, buffer, {
         cacheControl: '3600',
         upsert: false,
+        contentType: file.type,
       });
 
     if (error) {
