@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase';
+import { createAdminBrowserClient } from '@/lib/supabase-admin-client';
 import Image from 'next/image';
 
 type Message = {
@@ -61,7 +61,7 @@ function groupByDate(messages: Message[]) {
 
 export default function AdminChatPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = createAdminBrowserClient();
 
   const [adminEmail, setAdminEmail] = useState('');
   const [students, setStudents] = useState<ChatStudent[]>([]);
@@ -228,7 +228,7 @@ export default function AdminChatPage() {
       {/* Navbar */}
       <nav className="navbar">
         <a href="/admin" className="navbar-logo">
-          <Image src="/logo.png" alt="Pin Power" width={120} height={40} style={{ objectFit: 'contain' }} />
+          <img src="/logo.png" alt="Pin Power" style={{ width: 120, height: 'auto', objectFit: 'contain' }} />
         </a>
         <div className="navbar-actions">
           <a href="/admin" className="btn btn-sm btn-ghost" style={{ color: 'rgba(255,255,255,0.7)' }}>
