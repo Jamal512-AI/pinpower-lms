@@ -77,34 +77,50 @@ export default function LoginPage() {
         return;
       }
 
-      if (profile.role === 'admin') {
-        setTimeout(() => {
+      // Wait for session to settle in browser cookies
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        // If session not found immediately, wait a bit longer and retry once
+        await new Promise(resolve => setTimeout(resolve, 800));
+        const { data: retrySession } = await supabase.auth.getSession();
+        if (!retrySession.session) {
+          throw new Error('Auth session failed to persist. Please ensure cookies are enabled.');
+        }
+      }
+
+      // Student device check (only for students)
+      if (profile.role !== 'admin') {
+        const FingerprintJS = (await import('@fingerprintjs/fingerprintjs')).default;
+        const fp = await FingerprintJS.load();
+        const result = await fp.get();
+        const fingerprint = result.visitorId;
+
+        const res = await fetch('/api/device-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: data.user.id, fingerprint }),
+        });
+        const deviceData = await res.json();
+
+        if (deviceData.blocked) {
+          await supabase.auth.signOut();
+          router.push('/device-limit-reached');
+          return;
+        }
+      }
+
+      setLoading(false);
+      setSuccessMsg(`Welcome back! Redirecting...`);
+
+      setTimeout(() => {
+        if (profile.role === 'admin') {
           window.location.href = '/admin';
-        }, 1000);
-        return;
-      }
-
-      // Student device check
-      const FingerprintJS = (await import('@fingerprintjs/fingerprintjs')).default;
-      const fp = await FingerprintJS.load();
-      const result = await fp.get();
-      const fingerprint = result.visitorId;
-
-      const res = await fetch('/api/device-check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: data.user.id, fingerprint }),
-      });
-      const deviceData = await res.json();
-
-      if (deviceData.blocked) {
-        await supabase.auth.signOut();
-        router.push('/device-limit-reached');
-        return;
-      }
-
-      if (profile.access_status === 'pending') { window.location.href = '/waiting-room'; return; }
-      window.location.href = '/dashboard';
+        } else if (profile.access_status === 'pending') {
+          window.location.href = '/waiting-room';
+        } else {
+          window.location.href = '/dashboard';
+        }
+      }, 1000);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.';
       setError(message);
@@ -392,3 +408,7 @@ function Orbs() {
     </>
   );
 }
+function setSuccessMsg(arg0: string) {
+  throw new Error('Function not implemented.');
+}
+
