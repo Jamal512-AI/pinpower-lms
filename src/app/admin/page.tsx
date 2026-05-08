@@ -20,6 +20,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('students');
   const [userEmail, setUserEmail] = useState('');
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState('');
 
   // Students
   const [students, setStudents] = useState<Student[]>([]);
@@ -68,10 +69,16 @@ export default function AdminPage() {
 
   useEffect(() => {
     async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { window.location.href = '/login'; return; }
-      const { data: profile } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
-      if (!profile || profile.role !== 'admin') { window.location.href = '/login'; return; }
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) console.error('GET USER ERROR:', userError);
+      if (!user) { setAuthError(`NO_USER: ${userError?.message || 'Session not found'}`); return; }
+      
+      const { data: profile, error } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
+      if (error) console.error('PROFILE FETCH ERROR:', error);
+      
+      if (!profile) { setAuthError(`NO_PROFILE: Could not fetch profile for user ${user.id}. Error: ${error?.message || 'Unknown'}`); return; }
+      if (profile.role !== 'admin') { setAuthError(`NOT_ADMIN: Profile role is ${profile.role}`); return; }
+      
       setUserEmail(user.email!);
       loadStudents();
       loadModules();
@@ -158,6 +165,16 @@ export default function AdminPage() {
   const approved = students.filter(s => s.access_status === 'approved');
   const filteredQueries = queryFilter === 'all' ? queries : queries.filter(q => q.module_name === queryFilter);
   const uniqueModuleNames = [...new Set(queries.map(q => q.module_name))];
+
+  if (authError) {
+    return (
+      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: 'red', minHeight: '100vh' }}>
+        <h1>Admin Authentication Failed</h1>
+        <p style={{ fontSize: 20 }}>{authError}</p>
+        <button onClick={handleLogout} style={{ marginTop: 20, padding: 10, cursor: 'pointer' }}>Sign Out & Try Again</button>
+      </div>
+    );
+  }
 
   return (
     <div className="admin-layout">
