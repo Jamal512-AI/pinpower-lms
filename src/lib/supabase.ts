@@ -1,30 +1,27 @@
 import { createBrowserClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-/**
- * Student / default Supabase browser client — uses the library's built-in
- * singleton so that all student pages share the same instance & session.
- */
-let _studentClient: SupabaseClient | null = null;
+let _sharedClient: SupabaseClient | null = null;
 
 export function createClient(): SupabaseClient {
-  if (_studentClient) return _studentClient;
+  if (_sharedClient) return _sharedClient;
 
-  _studentClient = createBrowserClient(
+  _sharedClient = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      isSingleton: false,
-      cookieOptions: {
-        name: 'sb-student-auth',
-      },
       auth: {
-        storageKey: 'sb-student-auth-token',
         persistSession: true,
         autoRefreshToken: true,
+        detectSessionInUrl: true,
       },
+      cookieOptions: {
+        path: '/',
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+      }
     }
   );
 
-  return _studentClient;
+  return _sharedClient;
 }
