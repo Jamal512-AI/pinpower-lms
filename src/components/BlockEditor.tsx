@@ -262,6 +262,7 @@ export default function BlockEditor({ content, onChange, placeholder, readOnly =
       setUploadError(data.error || 'Upload failed');
     } else {
       editor.chain().focus().setImage({ src: data.url, alt: file.name }).run();
+      onChange(editor.getHTML()); // Force auto-save to Supabase immediately after inserting image
     }
 
     setUploading(false);
