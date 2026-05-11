@@ -38,6 +38,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   // Signup state
   const [signupEmail, setSignupEmail] = useState('');
@@ -110,17 +111,25 @@ export default function LoginPage() {
       }
 
       setLoading(false);
-      setSuccessMsg(`Welcome back! Redirecting...`);
+      setSuccessMsg(`Welcome back! Redirecting to ${profile.role === 'admin' ? 'Admin Portal' : 'Dashboard'}...`);
+
+      // Final session check before navigation
+      const { data: finalCheck } = await supabase.auth.getSession();
+      if (!finalCheck.session) {
+          console.error("Session vanished before redirect!");
+          // Try to recover by refreshing
+          await supabase.auth.refreshSession();
+      }
 
       setTimeout(() => {
-        if (profile.role === 'admin') {
-          window.location.href = '/admin';
-        } else if (profile.access_status === 'pending') {
-          window.location.href = '/waiting-room';
+        const target = profile.role === 'admin' ? '/admin' : '/dashboard';
+        if (profile.role !== 'admin' && profile.access_status === 'pending') {
+          router.push('/waiting-room');
         } else {
-          window.location.href = '/dashboard';
+          router.push(target);
         }
-      }, 1000);
+        router.refresh();
+      }, 800);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.';
       setError(message);
@@ -220,6 +229,12 @@ export default function LoginPage() {
 
             {/* ── LOGIN FORM ── */}
             <form className="lp-form" onSubmit={handleLogin}>
+              {successMsg && (
+                <div className="lp-alert lp-alert-success" style={{ background: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', borderColor: 'rgba(34, 197, 94, 0.2)' }}>
+                  <span>✅</span> {successMsg}
+                </div>
+              )}
+
               {(error || urlError) && (
                 <div className="lp-alert lp-alert-error">
                   <span>⚠️</span> {error || urlError}
@@ -408,7 +423,5 @@ function Orbs() {
     </>
   );
 }
-function setSuccessMsg(arg0: string) {
-  throw new Error('Function not implemented.');
-}
+
 
