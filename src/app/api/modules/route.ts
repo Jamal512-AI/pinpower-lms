@@ -30,13 +30,19 @@ export async function POST(req: NextRequest) {
   try {
     const supabase = await createAdminSupabaseClient();
     const body = await req.json();
-    const { title, description, sort_order, status } = body;
+    const { title, description, sort_order, status, content } = body;
 
     if (!title) return NextResponse.json({ error: 'Title is required' }, { status: 400 });
 
     const { data, error } = await supabase
       .from('modules')
-      .insert([{ title, description: description || '', sort_order: sort_order || 0, status: status || 'draft' }])
+      .insert([{
+        title,
+        description: description || '',
+        sort_order: sort_order || 0,
+        status: status || 'draft',
+        content: content || '',
+      }])
       .select()
       .single();
 
@@ -73,7 +79,9 @@ export async function PATCH(req: NextRequest) {
 
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
 
-    const updateFields: Record<string, string> = {};
+    const updateFields: Record<string, string> = {
+      updated_at: new Date().toISOString(),
+    };
     if (title !== undefined) updateFields.title = title;
     if (description !== undefined) updateFields.description = description;
     if (content !== undefined) updateFields.content = content;
