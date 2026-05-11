@@ -8,8 +8,6 @@ import { getAdminSupabaseClient } from '@/lib/supabase-server';
  */
 export async function POST(req: NextRequest) {
   try {
-    // Lazily grab the singleton — avoids issues if env vars aren't ready at
-    // module-evaluation time on some platforms (Vercel edge bundling).
     const supabase = getAdminSupabaseClient();
 
     const formData = await req.formData();
@@ -19,7 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Validate file type (images only)
+    // Validate file type
     if (!file.type.startsWith('image/')) {
       return NextResponse.json({ error: 'Only image files are allowed' }, { status: 400 });
     }
@@ -33,18 +31,17 @@ export async function POST(req: NextRequest) {
     const ext = file.name.split('.').pop() || 'jpg';
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
-    // Convert Web File to Buffer for reliable Node.js Supabase upload
+    // Convert to Buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Upload to Supabase Storage (bucket: module-images)
+    // Upload to Supabase Storage
     const { error: uploadError } = await supabase.storage
       .from('module-images')
       .upload(filename, buffer, {
-        cacheControl: '31536000',      // 1 year cache
+        cacheControl: '31536000',
         upsert: false,
         contentType: file.type || 'image/jpeg',
-        duplex: 'half',                // required for streaming in some runtimes
       });
 
     if (uploadError) {
@@ -68,5 +65,4 @@ export async function POST(req: NextRequest) {
   }
 }
 
-
-export const maxDuration = 30;  // seconds
+export const maxDuration = 30;
