@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase';
-import { forceLogout } from '@/lib/auth-utils';
+import { createAdminBrowserClient } from '@/lib/supabase-admin-client';
 import Image from 'next/image';
 import Link from 'next/link';
+import { sanitizeHtml } from '@/lib/sanitize-html';
 
 type Student = { id: string; email: string; role: string; access_status: string; created_at: string; };
-type Module = { id: string; title: string; description: string; sort_order: number; status?: string; };
+type Module = { id: string; title: string; description: string; sort_order: number; status?: string; content?: string; };
 type ModuleVideo = { id: string; module_id: string; title: string; video_url: string; drive_email: string; sort_order: number; };
 type Query = { id: string; student_email: string; module_name: string; query_text: string; is_resolved: boolean; created_at: string; };
 
@@ -16,13 +16,11 @@ type Tab = 'students' | 'modules' | 'queries';
 
 export default function AdminPage() {
   const router = useRouter();
-  // Use the standard client — same one used by the login page
-  const supabase = createClient();
+  const supabase = createAdminBrowserClient();
 
   const [tab, setTab] = useState<Tab>('students');
   const [userEmail, setUserEmail] = useState('');
   const [loading, setLoading] = useState(true);
-  const [authError, setAuthError] = useState('');
 
   // Students
   const [students, setStudents] = useState<Student[]>([]);
@@ -71,63 +69,18 @@ export default function AdminPage() {
 
   useEffect(() => {
     async function init() {
-      try {
-        // Step 1: Try getSession first (reads from cookie/localStorage directly)
-        const { data: sessionData } = await supabase.auth.getSession();
-        
-        let userId: string | null = null;
-        let userEmailVal: string | null = null;
-
-        if (sessionData.session) {
-          userId = sessionData.session.user.id;
-          userEmailVal = sessionData.session.user.email ?? null;
-        } else {
-          // Step 2: Try refreshing the session
-          const { data: refreshData } = await supabase.auth.refreshSession();
-          if (refreshData.session) {
-            userId = refreshData.session.user.id;
-            userEmailVal = refreshData.session.user.email ?? null;
-          }
-        }
-
-        if (!userId) {
-          // Step 3: Last resort — getUser() makes a network call
-          const { data: userData, error: userError } = await supabase.auth.getUser();
-          if (!userData.user) {
-            setAuthError(`NO_USER: Auth session missing! Please log in again.`);
-            return;
-          }
-          userId = userData.user.id;
-          userEmailVal = userData.user.email ?? null;
-        }
-
-        // Step 4: Verify admin role
-        const { data: profile, error: profileError } = await supabase
-          .from('users_extended')
-          .select('role')
-          .eq('id', userId)
-          .single();
-
-        if (profileError || !profile) {
-          setAuthError(`NO_PROFILE: Could not fetch profile. Error: ${profileError?.message || 'Unknown'}`);
-          return;
-        }
-        if (profile.role !== 'admin') {
-          setAuthError(`NOT_ADMIN: Profile role is ${profile.role}`);
-          return;
-        }
-
-        setUserEmail(userEmailVal || '');
-        loadStudents();
-        loadModules();
-        loadQueries();
-      } catch (err: any) {
-        setAuthError(`ERROR: ${err.message}`);
-      }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push('/admin-login'); return; }
+      const { data: profile } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
+      if (!profile || profile.role !== 'admin') { router.push('/admin-login'); return; }
+      setUserEmail(user.email!);
+      loadStudents();
+      loadModules();
+      loadQueries();
     }
     init();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [router, loadStudents, loadModules, loadQueries]);
 
   // ── Student Actions ─────────────────────────────────────────
   async function approveStudent(studentId: string) {
@@ -197,8 +150,8 @@ export default function AdminPage() {
   }
 
   async function handleLogout() {
-    await forceLogout();
-    window.location.href = '/login';
+    await supabase.auth.signOut();
+    router.push('/admin-login');
   }
 
   // ── Derived ─────────────────────────────────────────────────
@@ -206,21 +159,6 @@ export default function AdminPage() {
   const approved = students.filter(s => s.access_status === 'approved');
   const filteredQueries = queryFilter === 'all' ? queries : queries.filter(q => q.module_name === queryFilter);
   const uniqueModuleNames = [...new Set(queries.map(q => q.module_name))];
-
-  if (authError) {
-    return (
-      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: '#b91c1c', minHeight: '100vh', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ marginBottom: 16 }}>Admin Authentication Failed</h1>
-        <p style={{ fontSize: 16, marginBottom: 24 }}>{authError}</p>
-        <button
-          onClick={handleLogout}
-          style={{ marginTop: 20, padding: '12px 24px', cursor: 'pointer', background: 'white', color: '#b91c1c', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 15 }}
-        >
-          Sign Out &amp; Try Again
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="admin-layout">
@@ -335,7 +273,7 @@ export default function AdminPage() {
                         <td style={{ color: 'var(--text-muted)' }}>{new Date(s.created_at).toLocaleDateString()}</td>
                         <td><span className="badge badge-approved">Approved</span></td>
                         <td>
-                          <button id={`revoke-${s.id}`} className="btn btn-sm btn-ghost" onClick={() => { if (window.confirm('Revoke access for this student?')) rejectStudent(s.id); }} style={{ color: 'var(--error)' }}>
+                          <button id={`revoke-${s.id}`} className="btn btn-sm btn-ghost" onClick={() => { if (window.confirm('Are you sure you want to revoke access for this student?')) rejectStudent(s.id); }} style={{ color: 'var(--error)' }}>
                             Revoke
                           </button>
                         </td>
@@ -376,7 +314,7 @@ export default function AdminPage() {
                     </div>
                     <div className="form-group">
                       <label className="form-label">Description</label>
-                      <textarea className="form-input" style={{ resize: 'vertical' }} rows={2} placeholder="Brief description..." value={newModule.description} onChange={e => setNewModule({ ...newModule, description: e.target.value })} />
+                      <textarea className="form-input" style={{ resize: 'vertical' }} rows={2} placeholder="Brief description of this module..." value={newModule.description} onChange={e => setNewModule({ ...newModule, description: e.target.value })} />
                     </div>
                     <div className="form-group">
                       <label className="form-label">Sort Order</label>
@@ -401,9 +339,9 @@ export default function AdminPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</div>
                         {m.status === 'published' ? (
-                          <span style={{ fontSize: 10, background: 'rgba(16,185,129,0.1)', color: '#10b981', padding: '2px 6px', borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>Published</span>
+                          <span style={{ fontSize: 10, background: 'rgba(16,185,129,0.1)', color: '#10b981', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>Published</span>
                         ) : (
-                          <span style={{ fontSize: 10, background: 'rgba(0,0,0,0.06)', color: 'var(--text-muted)', padding: '2px 6px', borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>Draft</span>
+                          <span style={{ fontSize: 10, background: 'rgba(255,255,255,0.1)', color: 'var(--text-muted)', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>Draft</span>
                         )}
                       </div>
                       {m.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{m.description.slice(0, 60)}{m.description.length > 60 ? '…' : ''}</div>}
@@ -448,7 +386,7 @@ export default function AdminPage() {
 
                   {showAddVideo && (
                     <div className="card" style={{ marginBottom: 24, padding: 24 }}>
-                      <h3 style={{ marginBottom: 16, fontSize: 16, fontWeight: 700 }}>📤 Add Video to This Module</h3>
+                      <h3 style={{ marginBottom: 16, fontSize: 16, fontWeight: 700 }}>📤 Upload Video to This Module</h3>
                       <form onSubmit={addVideo} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                         <div className="form-group">
                           <label className="form-label">Video Title *</label>
@@ -456,11 +394,17 @@ export default function AdminPage() {
                         </div>
                         <div className="form-group">
                           <label className="form-label">Google Account Email (Drive Owner)</label>
-                          <input className="form-input" type="email" placeholder="yourname@gmail.com" value={newVideo.drive_email} onChange={e => setNewVideo({ ...newVideo, drive_email: e.target.value })} />
+                          <input className="form-input" type="email" placeholder="yourname@gmail.com — owner of the Drive video" value={newVideo.drive_email} onChange={e => setNewVideo({ ...newVideo, drive_email: e.target.value })} />
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                            This is the Gmail that owns the video on Google Drive. The video must be shared publicly or as "Anyone with the link can view".
+                          </span>
                         </div>
                         <div className="form-group">
                           <label className="form-label">Google Drive Video Link *</label>
                           <input className="form-input" placeholder="https://drive.google.com/file/d/FILE_ID/view" value={newVideo.video_url} onChange={e => setNewVideo({ ...newVideo, video_url: e.target.value })} required />
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                            Share the file from Google Drive → "Copy link". Make sure it's set to "Anyone with the link".
+                          </span>
                         </div>
                         <div className="form-group">
                           <label className="form-label">Sort Order</label>
@@ -471,11 +415,25 @@ export default function AdminPage() {
                     </div>
                   )}
 
+                  <div style={{ marginBottom: 24 }}>
+                    <h3 className="section-title">🧾 Module Content Preview</h3>
+                    {selectedModule.content ? (
+                      <div
+                        className="editor-readonly module-content-readonly"
+                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedModule.content) }}
+                      />
+                    ) : (
+                      <div className="module-content-empty">
+                        This module has no content yet. Click `Edit` to add content using the block editor.
+                      </div>
+                    )}
+                  </div>
+
                   <h3 className="section-title">🎬 Videos ({moduleVideos.length})</h3>
                   {moduleVideos.length === 0 ? (
                     <div className="empty-state">
                       <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-                      <p>No videos in this module yet.</p>
+                      <p>No videos in this module. Click "Add Video" to upload one!</p>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
