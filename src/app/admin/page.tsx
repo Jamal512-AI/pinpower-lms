@@ -68,10 +68,23 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    async function init() {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError) console.error('GET USER ERROR:', userError);
-      if (!user) { setAuthError(`NO_USER: ${userError?.message || 'Session not found'}`); return; }
+    async function init(retries = 3) {
+      try {
+        let { data: { user }, error: userError } = await supabase.auth.getUser();
+        
+        if (!user && retries > 0) {
+          console.log(`Auth missing, retrying... (${retries} left)`);
+          await new Promise(resolve => setTimeout(resolve, 500));
+          await supabase.auth.refreshSession();
+          return init(retries - 1);
+        }
+
+        if (!user) { 
+          const { data: sessionData } = await supabase.auth.getSession();
+          const allCookies = typeof document !== 'undefined' ? document.cookie : 'no-document';
+          setAuthError(`NO_USER: ${userError?.message || 'Session not found after retries.'}\n\nDEBUG_SESSION: ${JSON.stringify(sessionData)}\n\nDEBUG_COOKIES: ${allCookies}`); 
+          return; 
+        }
       
       const { data: profile, error } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
       if (error) console.error('PROFILE FETCH ERROR:', error);
@@ -79,10 +92,13 @@ export default function AdminPage() {
       if (!profile) { setAuthError(`NO_PROFILE: Could not fetch profile for user ${user.id}. Error: ${error?.message || 'Unknown'}`); return; }
       if (profile.role !== 'admin') { setAuthError(`NOT_ADMIN: Profile role is ${profile.role}`); return; }
       
-      setUserEmail(user.email!);
-      loadStudents();
-      loadModules();
-      loadQueries();
+        setUserEmail(user.email!);
+        loadStudents();
+        loadModules();
+        loadQueries();
+      } catch (err: any) {
+        setAuthError(`TRY_CATCH_ERROR: ${err.message}`);
+      }
     }
     init();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -168,9 +184,9 @@ export default function AdminPage() {
 
   if (authError) {
     return (
-      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: 'red', minHeight: '100vh' }}>
+      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: 'red', minHeight: '100vh', whiteSpace: 'pre-wrap' }}>
         <h1>Admin Authentication Failed</h1>
-        <p style={{ fontSize: 20 }}>{authError}</p>
+        <p style={{ fontSize: 16 }}>{authError}</p>
         <button onClick={handleLogout} style={{ marginTop: 20, padding: 10, cursor: 'pointer' }}>Sign Out & Try Again</button>
       </div>
     );
