@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
-import { forceLogout } from '@/lib/auth-utils';
 
 type RoleTab = 'student' | 'admin';
 type View = 'login' | 'signup';
@@ -14,26 +13,7 @@ export default function LoginPage() {
 
   const [roleTab, setRoleTab] = useState<RoleTab>('student');
   const [view, setView] = useState<View>('login');
-
-  // Read err param from URL
-  const [urlError, setUrlError] = useState('');
-  useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    const errParam = searchParams.get('err');
-    if (errParam) {
-      if (errParam === 'no_user') setUrlError('Session expired or user not found. Please log in again.');
-      else if (errParam === 'no_profile') setUrlError('User profile missing. Contact support.');
-      else if (errParam === 'not_admin') setUrlError('Access denied. You do not have admin privileges.');
-      else setUrlError('An unknown error occurred.');
-
-      // Clean up conflicting sessions/cookies
-      forceLogout();
-
-      // Clean up the URL
-      window.history.replaceState(null, '', '/login');
-    }
-  }, []);
-
+  
   const [showPassword, setShowPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
 
@@ -42,7 +22,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
 
   // Signup state
   const [signupEmail, setSignupEmail] = useState('');
@@ -82,58 +61,32 @@ export default function LoginPage() {
         return;
       }
 
-      // Wait for session to settle in browser cookies
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        // If session not found immediately, wait a bit longer and retry once
-        await new Promise(resolve => setTimeout(resolve, 800));
-        const { data: retrySession } = await supabase.auth.getSession();
-        if (!retrySession.session) {
-          throw new Error('Auth session failed to persist. Please ensure cookies are enabled.');
-        }
+      if (profile.role === 'admin') {
+        router.push('/admin');
+        return;
       }
 
-      // Student device check (only for students)
-      if (profile.role !== 'admin') {
-        const FingerprintJS = (await import('@fingerprintjs/fingerprintjs')).default;
-        const fp = await FingerprintJS.load();
-        const result = await fp.get();
-        const fingerprint = result.visitorId;
+      // Student device check
+      const FingerprintJS = (await import('@fingerprintjs/fingerprintjs')).default;
+      const fp = await FingerprintJS.load();
+      const result = await fp.get();
+      const fingerprint = result.visitorId;
 
-        const res = await fetch('/api/device-check', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: data.user.id, fingerprint }),
-        });
-        const deviceData = await res.json();
+      const res = await fetch('/api/device-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: data.user.id, fingerprint }),
+      });
+      const deviceData = await res.json();
 
-        if (deviceData.blocked) {
-          await supabase.auth.signOut();
-          router.push('/device-limit-reached');
-          return;
-        }
+      if (deviceData.blocked) {
+        await supabase.auth.signOut();
+        router.push('/device-limit-reached');
+        return;
       }
 
-      setLoading(false);
-      setSuccessMsg(`Welcome back! Redirecting to ${profile.role === 'admin' ? 'Admin Portal' : 'Dashboard'}...`);
-
-      // Final session check before navigation
-      const { data: finalCheck } = await supabase.auth.getSession();
-      if (!finalCheck.session) {
-          console.error("Session vanished before redirect!");
-          // Try to recover by refreshing
-          await supabase.auth.refreshSession();
-      }
-
-      setTimeout(() => {
-        const target = profile.role === 'admin' ? '/admin' : '/dashboard';
-        if (profile.role !== 'admin' && profile.access_status === 'pending') {
-          router.push('/waiting-room');
-        } else {
-          router.push(target);
-        }
-        router.refresh();
-      }, 800);
+      if (profile.access_status === 'pending') { router.push('/waiting-room'); return; }
+      router.push('/dashboard');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.';
       setError(message);
@@ -233,15 +186,9 @@ export default function LoginPage() {
 
             {/* ── LOGIN FORM ── */}
             <form className="lp-form" onSubmit={handleLogin}>
-              {successMsg && (
-                <div className="lp-alert lp-alert-success" style={{ background: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', borderColor: 'rgba(34, 197, 94, 0.2)' }}>
-                  <span>✅</span> {successMsg}
-                </div>
-              )}
-
-              {(error || urlError) && (
+              {error && (
                 <div className="lp-alert lp-alert-error">
-                  <span>⚠️</span> {error || urlError}
+                  <span>⚠️</span> {error}
                 </div>
               )}
 
@@ -323,7 +270,7 @@ export default function LoginPage() {
             {/* ── SIGNUP FORM ── */}
             <form className="lp-form" onSubmit={handleSignup}>
               <h3 style={{ textAlign: 'center', marginBottom: '8px', color: 'var(--brand-blue-dark)' }}>Create Student Account</h3>
-
+              
               {signupError && (
                 <div className="lp-alert lp-alert-error">
                   <span>⚠️</span> {signupError}
@@ -401,7 +348,7 @@ export default function LoginPage() {
               >
                 {signupLoading ? <><span className="lp-spinner" /> Creating Account…</> : 'Create Account'}
               </button>
-
+              
               <button
                 type="button"
                 className="lp-btn lp-btn-outline"
@@ -427,5 +374,3 @@ function Orbs() {
     </>
   );
 }
-
-
