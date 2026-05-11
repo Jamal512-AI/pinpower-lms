@@ -38,7 +38,6 @@ export async function createServerSupabaseClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        name: 'sb-auth-token',
         getAll() {
           return cookieStore.getAll();
         },
