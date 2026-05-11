@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
+import { forceLogout } from '@/lib/auth-utils';
 
 type RoleTab = 'student' | 'admin';
 type View = 'login' | 'signup';
@@ -24,6 +25,9 @@ export default function LoginPage() {
       else if (errParam === 'no_profile') setUrlError('User profile missing. Contact support.');
       else if (errParam === 'not_admin') setUrlError('Access denied. You do not have admin privileges.');
       else setUrlError('An unknown error occurred.');
+
+      // Clean up conflicting sessions/cookies
+      forceLogout();
 
       // Clean up the URL
       window.history.replaceState(null, '', '/login');
