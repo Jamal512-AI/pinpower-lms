@@ -1061,6 +1061,29 @@ body {
 }
 .video-placeholder-large p { font-size: 16px; font-weight: 500; }
 
+.module-content-panel {
+  margin-bottom: 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: var(--shadow-sm);
+}
+
+.module-content-readonly {
+  max-height: 460px;
+  overflow: auto;
+}
+
+.module-content-empty {
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  color: var(--text-muted);
+  font-size: 14px;
+  background: var(--bg-card-2);
+}
+
 /* ─── Query Section ──────────────────────────────────────── */
 .query-section {
   margin-top: 40px;
