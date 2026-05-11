@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createAdminBrowserClient } from '@/lib/supabase-admin-client';
+import { forceLogout } from '@/lib/auth-utils';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -172,7 +173,7 @@ export default function AdminPage() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    await forceLogout();
     window.location.href = '/login';
   }
 
