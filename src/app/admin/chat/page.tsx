@@ -15,31 +15,18 @@ type Message = {
   created_at: string;
 };
 
-type ChatStudent = {
-  student_id: string;
-  student_email: string;
-  last_message: string;
-  last_sender: string;
-  last_time: string;
-  unread_count: number;
-};
-
-function formatTime(dateStr: string) {
-  const d = new Date(dateStr);
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
-  if (diffDays === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (diffDays === 1) return 'Yesterday';
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-
 function formatFullTime(dateStr: string) {
   const d = new Date(dateStr);
   const now = new Date();
   const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (diffDays === 1) return `Yesterday ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 1)
+    return `Yesterday ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  return (
+    d.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+    ' ' +
+    d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  );
 }
 
 function groupByDate(messages: Message[]) {
@@ -49,7 +36,12 @@ function groupByDate(messages: Message[]) {
     const d = new Date(msg.created_at);
     const now = new Date();
     const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
-    const label = diffDays === 0 ? 'Today' : diffDays === 1 ? 'Yesterday' : d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    const label =
+      diffDays === 0
+        ? 'Today'
+        : diffDays === 1
+        ? 'Yesterday'
+        : d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
     if (label !== currentLabel) {
       groups.push({ label, messages: [] });
       currentLabel = label;
@@ -59,21 +51,16 @@ function groupByDate(messages: Message[]) {
   return groups;
 }
 
-export default function AdminChatPage() {
+export default function StudentChatPage() {
   const router = useRouter();
-  // Use the standard client — same one used by the login page
+  // Use the STUDENT client (not admin client)
   const supabase = createClient();
 
-  const [adminEmail, setAdminEmail] = useState('');
-  const [students, setStudents] = useState<ChatStudent[]>([]);
-  const [selectedStudent, setSelectedStudent] = useState<ChatStudent | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [loadingStudents, setLoadingStudents] = useState(true);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [search, setSearch] = useState('');
-  const [authError, setAuthError] = useState('');
+  const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -81,139 +68,122 @@ export default function AdminChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // Auth check
+  // ── Auth: verify the user is a logged-in STUDENT (not admin check) ──
   useEffect(() => {
     async function init() {
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
+      // Try getUser first (makes a network call, always fresh)
+      const { data: { user: u } } = await supabase.auth.getUser();
 
-        let userId: string | null = null;
-        let email: string | null = null;
-
-        if (sessionData.session) {
-          userId = sessionData.session.user.id;
-          email = sessionData.session.user.email ?? null;
-        } else {
-          const { data: refreshData } = await supabase.auth.refreshSession();
-          if (refreshData.session) {
-            userId = refreshData.session.user.id;
-            email = refreshData.session.user.email ?? null;
-          }
-        }
-
-        if (!userId) {
-          const { data: userData } = await supabase.auth.getUser();
-          if (!userData.user) {
-            setAuthError('NO_USER: Auth session missing! Please log in again.');
-            return;
-          }
-          userId = userData.user.id;
-          email = userData.user.email ?? null;
-        }
-
-        const { data: profile } = await supabase
-          .from('users_extended')
-          .select('role')
-          .eq('id', userId)
-          .single();
-
-        if (!profile || profile.role !== 'admin') {
-          setAuthError(`NOT_ADMIN: Profile role is ${profile?.role || 'None'}`);
-          return;
-        }
-        setAdminEmail(email || '');
-      } catch (err: any) {
-        setAuthError(`ERROR: ${err.message}`);
+      if (!u) {
+        router.push('/login');
+        return;
       }
+
+      const { data: profile } = await supabase
+        .from('users_extended')
+        .select('role, access_status')
+        .eq('id', u.id)
+        .single();
+
+      if (!profile) {
+        router.push('/login');
+        return;
+      }
+
+      // Admins have their own chat at /admin/chat
+      if (profile.role === 'admin') {
+        router.push('/admin/chat');
+        return;
+      }
+
+      // Students must be approved
+      if (profile.access_status !== 'approved') {
+        router.push('/waiting-room');
+        return;
+      }
+
+      setUser({ id: u.id, email: u.email! });
     }
     init();
   }, []);
 
-  // Load student list
-  const loadStudents = useCallback(async () => {
-    const res = await fetch('/api/chat/students');
-    const data = await res.json();
-    setStudents(data.students || []);
-    setLoadingStudents(false);
-  }, []);
-
-  useEffect(() => { loadStudents(); }, [loadStudents]);
-
-  useEffect(() => {
-    const interval = setInterval(loadStudents, 10000);
-    return () => clearInterval(interval);
-  }, [loadStudents]);
-
-  // Load messages for selected student
+  // ── Load this student's messages ──
   const loadMessages = useCallback(async (studentId: string) => {
-    setLoadingMessages(true);
     const res = await fetch(`/api/chat?studentId=${studentId}`);
     const data = await res.json();
     setMessages(data.messages || []);
-    setLoadingMessages(false);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    if (!selectedStudent) return;
-    loadMessages(selectedStudent.student_id);
-  }, [selectedStudent, loadMessages]);
+    if (!user) return;
+    loadMessages(user.id);
+  }, [user, loadMessages]);
 
-  // Real-time subscription
+  // ── Realtime subscription for new messages in this student's thread ──
   useEffect(() => {
-    if (!selectedStudent) return;
+    if (!user) return;
 
     const channel = supabase
-      .channel(`admin-chat-${selectedStudent.student_id}`)
+      .channel(`student-chat-${user.id}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'chat_messages',
-          filter: `student_id=eq.${selectedStudent.student_id}`,
+          filter: `student_id=eq.${user.id}`,
         },
         (payload) => {
-          setMessages(prev => {
+          setMessages((prev) => {
             const incoming = payload.new as Message;
-            const filtered = prev.filter(m => !(m.id.startsWith('optimistic-') && m.message === incoming.message));
-            if (filtered.find(m => m.id === incoming.id)) return filtered;
+            // Remove any optimistic duplicate
+            const filtered = prev.filter(
+              (m) => !(m.id.startsWith('optimistic-') && m.message === incoming.message)
+            );
+            if (filtered.find((m) => m.id === incoming.id)) return filtered;
             return [...filtered, incoming];
           });
-          loadStudents();
         }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [selectedStudent]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
 
-  useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
+  // Auto-scroll when messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
 
-  async function sendReply() {
-    if (!input.trim() || !selectedStudent || sending) return;
+  async function sendMessage() {
+    if (!input.trim() || !user || sending) return;
     setSending(true);
     const text = input.trim();
     setInput('');
 
+    // Optimistic UI
     const optimistic: Message = {
       id: `optimistic-${Date.now()}`,
-      student_id: selectedStudent.student_id,
-      student_email: selectedStudent.student_email,
+      student_id: user.id,
+      student_email: user.email,
       message: text,
-      sender_type: 'admin',
-      is_read: true,
+      sender_type: 'student',
+      is_read: false,
       created_at: new Date().toISOString(),
     };
-    setMessages(prev => [...prev, optimistic]);
+    setMessages((prev) => [...prev, optimistic]);
 
     await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        studentId: selectedStudent.student_id,
-        studentEmail: selectedStudent.student_email,
+        studentId: user.id,
+        studentEmail: user.email,
         message: text,
-        senderType: 'admin',
+        senderType: 'student',
       }),
     });
 
@@ -224,21 +194,7 @@ export default function AdminChatPage() {
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendReply();
-    }
-  }
-
-  async function selectStudent(s: ChatStudent) {
-    setSelectedStudent(s);
-    setMessages([]);
-    setInput('');
-    setStudents(prev => prev.map(st => st.student_id === s.student_id ? { ...st, unread_count: 0 } : st));
-    if (s.unread_count > 0) {
-      await fetch('/api/chat', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId: s.student_id }),
-      });
+      sendMessage();
     }
   }
 
@@ -247,190 +203,150 @@ export default function AdminChatPage() {
     window.location.href = '/login';
   }
 
-  const filteredStudents = students.filter(s =>
-    s.student_email.toLowerCase().includes(search.toLowerCase())
-  );
-
   const grouped = groupByDate(messages);
-  const totalUnread = students.reduce((acc, s) => acc + s.unread_count, 0);
-
-  if (authError) {
-    return (
-      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: '#b91c1c', minHeight: '100vh' }}>
-        <h1>Admin Authentication Failed</h1>
-        <p style={{ fontSize: 16, marginTop: 12 }}>{authError}</p>
-        <button
-          onClick={handleLogout}
-          style={{ marginTop: 20, padding: '12px 24px', cursor: 'pointer', background: 'white', color: '#b91c1c', border: 'none', borderRadius: 8, fontWeight: 700 }}
-        >
-          Sign Out &amp; Try Again
-        </button>
-      </div>
-    );
-  }
+  const avatarLetter = user?.email?.[0]?.toUpperCase() ?? '?';
 
   return (
-    <div className="admin-chat-page">
+    <div className="chat-page">
       {/* Navbar */}
       <nav className="navbar">
-        <a href="/admin" className="navbar-logo">
-          <img src="/logo.png" alt="Pin Power" style={{ width: 120, height: 'auto', objectFit: 'contain' }} />
+        <a href="/dashboard" className="navbar-logo">
+          <img
+            src="/logo.png"
+            alt="Pin Power"
+            style={{ width: 120, height: 'auto', objectFit: 'contain' }}
+          />
         </a>
         <div className="navbar-actions">
-          <a href="/admin" className="btn btn-sm btn-ghost" style={{ color: 'rgba(255,255,255,0.7)' }}>
-            ← Admin Dashboard
+          <a
+            href="/dashboard"
+            className="btn btn-sm btn-ghost"
+            style={{ color: 'rgba(255,255,255,0.7)' }}
+          >
+            ← Dashboard
           </a>
-          <span className="badge badge-admin">🛡️ Admin</span>
           <div className="navbar-user">
-            <div className="navbar-avatar" style={{ background: 'var(--brand-blue)' }}>
-              {adminEmail[0]?.toUpperCase()}
-            </div>
+            <div className="navbar-avatar">{avatarLetter}</div>
+            <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14 }}>{user?.email}</span>
           </div>
-          <button className="btn btn-sm btn-ghost" style={{ color: 'rgba(255,255,255,0.6)' }} onClick={handleLogout}>
+          <button
+            className="btn btn-sm btn-ghost"
+            style={{ color: 'rgba(255,255,255,0.6)' }}
+            onClick={handleLogout}
+          >
             Logout
           </button>
         </div>
       </nav>
 
-      <div className="admin-chat-layout">
-        {/* Left: Student List */}
-        <aside className="admin-chat-sidebar">
-          <div className="admin-chat-sidebar-header">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <h2 style={{ color: '#fff', fontSize: 17, fontWeight: 700 }}>💬 Student Chats</h2>
-              {totalUnread > 0 && <span className="unread-badge">{totalUnread}</span>}
+      {/* Chat container */}
+      <div className="chat-container">
+        {/* Chat header */}
+        <div className="chat-header">
+          <div className="chat-header-avatar">🛡️</div>
+          <div>
+            <div className="chat-header-name">Pin Power Support</div>
+            <div className="chat-header-status">
+              <span className="online-dot" />
+              Admin team · usually replies within a few hours
             </div>
-            <input
-              className="admin-chat-search"
-              placeholder="🔍 Search students…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
           </div>
+        </div>
 
-          <div className="admin-chat-student-list">
-            {loadingStudents ? (
-              <div style={{ padding: 24, textAlign: 'center' }}>
-                <span className="loader" style={{ borderTopColor: '#FF2A55', borderColor: 'rgba(255,255,255,0.2)' }}></span>
-              </div>
-            ) : filteredStudents.length === 0 ? (
-              <div style={{ padding: '32px 16px', textAlign: 'center', color: 'rgba(255,255,255,0.35)', fontSize: 14 }}>
-                {search ? 'No students match your search' : 'No student chats yet'}
-              </div>
-            ) : filteredStudents.map(s => (
-              <div
-                key={s.student_id}
-                className={`admin-chat-student-item ${selectedStudent?.student_id === s.student_id ? 'active' : ''}`}
-                onClick={() => selectStudent(s)}
-              >
-                <div className="admin-chat-student-avatar">{s.student_email[0].toUpperCase()}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="admin-chat-student-email">{s.student_email.split('@')[0]}</span>
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>{formatTime(s.last_time)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
-                    <span className="admin-chat-last-msg">
-                      {s.last_sender === 'admin' ? '🛡️ You: ' : ''}{s.last_message.slice(0, 36)}{s.last_message.length > 36 ? '…' : ''}
-                    </span>
-                    {s.unread_count > 0 && <span className="unread-badge">{s.unread_count}</span>}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </aside>
-
-        {/* Right: Chat Window */}
-        <main className="admin-chat-main">
-          {selectedStudent ? (
-            <>
-              <div className="admin-chat-window-header">
-                <div className="admin-chat-student-avatar" style={{ width: 42, height: 42, fontSize: 18 }}>
-                  {selectedStudent.student_email[0].toUpperCase()}
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 16 }}>{selectedStudent.student_email}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{messages.length} messages in this conversation</div>
-                </div>
-              </div>
-
-              <div className="chat-messages admin-messages" id="admin-chat-messages">
-                {loadingMessages ? (
-                  <div className="chat-loading">
-                    <span className="loader" style={{ borderTopColor: '#FF2A55', borderColor: 'rgba(0,0,0,0.1)' }}></span>
-                    <p>Loading conversation…</p>
-                  </div>
-                ) : messages.length === 0 ? (
-                  <div className="chat-empty">
-                    <div style={{ fontSize: 48 }}>💬</div>
-                    <p>No messages yet from this student.</p>
-                  </div>
-                ) : (
-                  grouped.map(group => (
-                    <div key={group.label}>
-                      <div className="chat-date-divider"><span>{group.label}</span></div>
-                      {group.messages.map(msg => (
-                        <div key={msg.id} className={`chat-message-row ${msg.sender_type === 'admin' ? 'student' : 'admin'}`}>
-                          {msg.sender_type === 'student' && (
-                            <div className="chat-avatar admin-avatar" style={{ background: 'rgba(255,42,85,0.15)', fontSize: 14 }}>
-                              {msg.student_email[0].toUpperCase()}
-                            </div>
-                          )}
-                          <div className="chat-bubble-wrap">
-                            <div className={`chat-bubble ${msg.sender_type === 'admin' ? 'bubble-student' : 'bubble-admin'}`}>
-                              {msg.sender_type === 'admin' && (
-                                <span style={{ fontSize: 11, opacity: 0.7, display: 'block', marginBottom: 2 }}>🛡️ Admin</span>
-                              )}
-                              {msg.message}
-                            </div>
-                            <div className="chat-time">{formatFullTime(msg.created_at)}</div>
-                          </div>
-                          {msg.sender_type === 'admin' && (
-                            <div className="chat-avatar student-avatar" style={{ background: 'var(--brand-blue)', fontSize: 12 }}>🛡️</div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ))
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-
-              <div className="chat-input-area">
-                <textarea
-                  ref={inputRef}
-                  className="chat-input"
-                  placeholder={`Reply to ${selectedStudent.student_email}… (Enter to send)`}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  rows={1}
-                  disabled={sending}
-                />
-                <button
-                  className="chat-send-btn"
-                  onClick={sendReply}
-                  disabled={!input.trim() || sending}
-                  id="admin-send-reply-btn"
-                >
-                  {sending ? <span className="loader" style={{ width: 18, height: 18, borderWidth: 2 }}></span> : '➤'}
-                </button>
-              </div>
-            </>
+        {/* Messages */}
+        <div className="chat-messages" id="student-chat-messages">
+          {loading ? (
+            <div className="chat-loading">
+              <span
+                className="loader"
+                style={{ borderTopColor: '#FF2A55', borderColor: 'rgba(0,0,0,0.1)' }}
+              />
+              <p>Loading messages…</p>
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="chat-empty">
+              <div style={{ fontSize: 56, marginBottom: 8 }}>💬</div>
+              <h3>Start a conversation</h3>
+              <p>
+                Have a question about a module or need help? Send a message and our admin team will
+                get back to you!
+              </p>
+            </div>
           ) : (
-            <div className="admin-chat-placeholder">
-              <div style={{ fontSize: 72, marginBottom: 20 }}>💬</div>
-              <h2>Select a student chat</h2>
-              <p>Click on any student from the left panel to view and reply to their messages.</p>
-              {totalUnread > 0 && (
-                <div className="admin-chat-unread-hint">
-                  <span>🔴</span> {totalUnread} unread message{totalUnread !== 1 ? 's' : ''}
+            grouped.map((group) => (
+              <div key={group.label}>
+                <div className="chat-date-divider">
+                  <span>{group.label}</span>
                 </div>
-              )}
-            </div>
+                {group.messages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`chat-message-row ${
+                      msg.sender_type === 'student' ? 'student' : 'admin'
+                    }`}
+                  >
+                    {msg.sender_type === 'admin' && (
+                      <div className="chat-avatar admin-avatar">🛡️</div>
+                    )}
+                    <div className="chat-bubble-wrap">
+                      <div
+                        className={`chat-bubble ${
+                          msg.sender_type === 'student' ? 'bubble-student' : 'bubble-admin'
+                        }`}
+                      >
+                        {msg.sender_type === 'admin' && (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              opacity: 0.65,
+                              display: 'block',
+                              marginBottom: 3,
+                              fontWeight: 700,
+                            }}
+                          >
+                            🛡️ Admin
+                          </span>
+                        )}
+                        {msg.message}
+                      </div>
+                      <div className="chat-time">{formatFullTime(msg.created_at)}</div>
+                    </div>
+                    {msg.sender_type === 'student' && (
+                      <div className="chat-avatar student-avatar">{avatarLetter}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))
           )}
-        </main>
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input */}
+        <div className="chat-input-area">
+          <textarea
+            ref={inputRef}
+            className="chat-input"
+            placeholder="Type your message… (Enter to send, Shift+Enter for new line)"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={1}
+            disabled={sending || !user}
+          />
+          <button
+            id="student-send-btn"
+            className="chat-send-btn"
+            onClick={sendMessage}
+            disabled={!input.trim() || sending || !user}
+          >
+            {sending ? (
+              <span className="loader" style={{ width: 18, height: 18, borderWidth: 2 }} />
+            ) : (
+              '➤'
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
