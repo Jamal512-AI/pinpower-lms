@@ -14,8 +14,10 @@ export function createClient(): SupabaseClient {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
+        storageKey: 'sb-auth-token', // Consistent key
       },
       cookieOptions: {
+        name: 'sb-auth-token',
         path: '/',
         sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production',
