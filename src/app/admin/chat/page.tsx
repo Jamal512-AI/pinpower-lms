@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { createAdminBrowserClient } from '@/lib/supabase-admin-client';
-import Image from 'next/image';
+import { createClient } from '@/lib/supabase';
+import { forceLogout } from '@/lib/auth-utils';
 
 type Message = {
   id: string;
@@ -29,7 +29,7 @@ function formatTime(dateStr: string) {
   const now = new Date();
   const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (diffDays === 1) return `Yesterday`;
+  if (diffDays === 1) return 'Yesterday';
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
@@ -61,7 +61,8 @@ function groupByDate(messages: Message[]) {
 
 export default function AdminChatPage() {
   const router = useRouter();
-  const supabase = createAdminBrowserClient();
+  // Use the standard client — same one used by the login page
+  const supabase = createClient();
 
   const [adminEmail, setAdminEmail] = useState('');
   const [students, setStudents] = useState<ChatStudent[]>([]);
@@ -80,21 +81,50 @@ export default function AdminChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // Auth check — admin only
+  // Auth check
   useEffect(() => {
-    async function init(retries = 3) {
-      let { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (!user && retries > 0) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await supabase.auth.refreshSession();
-        return init(retries - 1);
-      }
+    async function init() {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
 
-      if (!user) { setAuthError(`NO_USER: ${userError?.message || 'Session not found after retries'}`); return; }
-      const { data: profile, error } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
-      if (!profile || profile.role !== 'admin') { setAuthError(`NOT_ADMIN: Profile role is ${profile?.role || 'None'}. Error: ${error?.message || 'Unknown'}`); return; }
-      setAdminEmail(user.email!);
+        let userId: string | null = null;
+        let email: string | null = null;
+
+        if (sessionData.session) {
+          userId = sessionData.session.user.id;
+          email = sessionData.session.user.email ?? null;
+        } else {
+          const { data: refreshData } = await supabase.auth.refreshSession();
+          if (refreshData.session) {
+            userId = refreshData.session.user.id;
+            email = refreshData.session.user.email ?? null;
+          }
+        }
+
+        if (!userId) {
+          const { data: userData } = await supabase.auth.getUser();
+          if (!userData.user) {
+            setAuthError('NO_USER: Auth session missing! Please log in again.');
+            return;
+          }
+          userId = userData.user.id;
+          email = userData.user.email ?? null;
+        }
+
+        const { data: profile } = await supabase
+          .from('users_extended')
+          .select('role')
+          .eq('id', userId)
+          .single();
+
+        if (!profile || profile.role !== 'admin') {
+          setAuthError(`NOT_ADMIN: Profile role is ${profile?.role || 'None'}`);
+          return;
+        }
+        setAdminEmail(email || '');
+      } catch (err: any) {
+        setAuthError(`ERROR: ${err.message}`);
+      }
     }
     init();
   }, []);
@@ -109,7 +139,6 @@ export default function AdminChatPage() {
 
   useEffect(() => { loadStudents(); }, [loadStudents]);
 
-  // Poll student list every 10s to update unread counts
   useEffect(() => {
     const interval = setInterval(loadStudents, 10000);
     return () => clearInterval(interval);
@@ -129,7 +158,7 @@ export default function AdminChatPage() {
     loadMessages(selectedStudent.student_id);
   }, [selectedStudent, loadMessages]);
 
-  // Real-time subscription for selected student
+  // Real-time subscription
   useEffect(() => {
     if (!selectedStudent) return;
 
@@ -150,7 +179,6 @@ export default function AdminChatPage() {
             if (filtered.find(m => m.id === incoming.id)) return filtered;
             return [...filtered, incoming];
           });
-          // Refresh student list to update unread
           loadStudents();
         }
       )
@@ -159,7 +187,6 @@ export default function AdminChatPage() {
     return () => { supabase.removeChannel(channel); };
   }, [selectedStudent]);
 
-  // Auto-scroll
   useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
 
   async function sendReply() {
@@ -168,7 +195,6 @@ export default function AdminChatPage() {
     const text = input.trim();
     setInput('');
 
-    // Optimistic
     const optimistic: Message = {
       id: `optimistic-${Date.now()}`,
       student_id: selectedStudent.student_id,
@@ -206,10 +232,7 @@ export default function AdminChatPage() {
     setSelectedStudent(s);
     setMessages([]);
     setInput('');
-    // Mark as read locally
     setStudents(prev => prev.map(st => st.student_id === s.student_id ? { ...st, unread_count: 0 } : st));
-    
-    // Mark as read in DB
     if (s.unread_count > 0) {
       await fetch('/api/chat', {
         method: 'PUT',
@@ -220,7 +243,7 @@ export default function AdminChatPage() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    await forceLogout();
     window.location.href = '/login';
   }
 
@@ -233,10 +256,15 @@ export default function AdminChatPage() {
 
   if (authError) {
     return (
-      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: 'red', minHeight: '100vh' }}>
-        <h1>Admin Authentication Failed (Chat)</h1>
-        <p style={{ fontSize: 20 }}>{authError}</p>
-        <button onClick={() => { supabase.auth.signOut().then(() => window.location.href = '/login') }} style={{ marginTop: 20, padding: 10, cursor: 'pointer' }}>Sign Out & Try Again</button>
+      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: '#b91c1c', minHeight: '100vh' }}>
+        <h1>Admin Authentication Failed</h1>
+        <p style={{ fontSize: 16, marginTop: 12 }}>{authError}</p>
+        <button
+          onClick={handleLogout}
+          style={{ marginTop: 20, padding: '12px 24px', cursor: 'pointer', background: 'white', color: '#b91c1c', border: 'none', borderRadius: 8, fontWeight: 700 }}
+        >
+          Sign Out &amp; Try Again
+        </button>
       </div>
     );
   }
@@ -269,12 +297,8 @@ export default function AdminChatPage() {
         <aside className="admin-chat-sidebar">
           <div className="admin-chat-sidebar-header">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <h2 style={{ color: '#fff', fontSize: 17, fontWeight: 700 }}>
-                💬 Student Chats
-              </h2>
-              {totalUnread > 0 && (
-                <span className="unread-badge">{totalUnread}</span>
-              )}
+              <h2 style={{ color: '#fff', fontSize: 17, fontWeight: 700 }}>💬 Student Chats</h2>
+              {totalUnread > 0 && <span className="unread-badge">{totalUnread}</span>}
             </div>
             <input
               className="admin-chat-search"
@@ -299,23 +323,17 @@ export default function AdminChatPage() {
                 className={`admin-chat-student-item ${selectedStudent?.student_id === s.student_id ? 'active' : ''}`}
                 onClick={() => selectStudent(s)}
               >
-                <div className="admin-chat-student-avatar">
-                  {s.student_email[0].toUpperCase()}
-                </div>
+                <div className="admin-chat-student-avatar">{s.student_email[0].toUpperCase()}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span className="admin-chat-student-email">{s.student_email.split('@')[0]}</span>
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>
-                      {formatTime(s.last_time)}
-                    </span>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>{formatTime(s.last_time)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
                     <span className="admin-chat-last-msg">
                       {s.last_sender === 'admin' ? '🛡️ You: ' : ''}{s.last_message.slice(0, 36)}{s.last_message.length > 36 ? '…' : ''}
                     </span>
-                    {s.unread_count > 0 && (
-                      <span className="unread-badge">{s.unread_count}</span>
-                    )}
+                    {s.unread_count > 0 && <span className="unread-badge">{s.unread_count}</span>}
                   </div>
                 </div>
               </div>
@@ -327,22 +345,16 @@ export default function AdminChatPage() {
         <main className="admin-chat-main">
           {selectedStudent ? (
             <>
-              {/* Chat Header */}
               <div className="admin-chat-window-header">
                 <div className="admin-chat-student-avatar" style={{ width: 42, height: 42, fontSize: 18 }}>
                   {selectedStudent.student_email[0].toUpperCase()}
                 </div>
                 <div>
-                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 16 }}>
-                    {selectedStudent.student_email}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {messages.length} messages in this conversation
-                  </div>
+                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 16 }}>{selectedStudent.student_email}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{messages.length} messages in this conversation</div>
                 </div>
               </div>
 
-              {/* Messages */}
               <div className="chat-messages admin-messages" id="admin-chat-messages">
                 {loadingMessages ? (
                   <div className="chat-loading">
@@ -357,14 +369,9 @@ export default function AdminChatPage() {
                 ) : (
                   grouped.map(group => (
                     <div key={group.label}>
-                      <div className="chat-date-divider">
-                        <span>{group.label}</span>
-                      </div>
+                      <div className="chat-date-divider"><span>{group.label}</span></div>
                       {group.messages.map(msg => (
-                        <div
-                          key={msg.id}
-                          className={`chat-message-row ${msg.sender_type === 'admin' ? 'student' : 'admin'}`}
-                        >
+                        <div key={msg.id} className={`chat-message-row ${msg.sender_type === 'admin' ? 'student' : 'admin'}`}>
                           {msg.sender_type === 'student' && (
                             <div className="chat-avatar admin-avatar" style={{ background: 'rgba(255,42,85,0.15)', fontSize: 14 }}>
                               {msg.student_email[0].toUpperCase()}
@@ -390,7 +397,6 @@ export default function AdminChatPage() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Reply Input */}
               <div className="chat-input-area">
                 <textarea
                   ref={inputRef}
