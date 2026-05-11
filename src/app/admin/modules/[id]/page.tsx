@@ -2,11 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { createAdminBrowserClient } from '@/lib/supabase-admin-client';
-import Image from 'next/image';
+import { createClient } from '@/lib/supabase';
 import dynamic from 'next/dynamic';
 
-// Lazy-load block editor (avoids SSR issues with TipTap)
 const BlockEditor = dynamic(() => import('@/components/BlockEditor'), { ssr: false });
 
 type ModuleVideo = {
@@ -23,7 +21,8 @@ export default function ModuleEditorPage() {
   const router = useRouter();
   const params = useParams();
   const moduleId = params.id as string;
-  const supabase = createAdminBrowserClient();
+  // Use the standard client — same one used by the login page
+  const supabase = createClient();
 
   const [mod, setMod] = useState<ModuleData | null>(null);
   const [videos, setVideos] = useState<ModuleVideo[]>([]);
@@ -31,20 +30,17 @@ export default function ModuleEditorPage() {
   const [mounted, setMounted] = useState(false);
   const [authError, setAuthError] = useState('');
 
-  // Edit module info
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editStatus, setEditStatus] = useState<'draft' | 'published'>('draft');
   const [infoSaving, setInfoSaving] = useState(false);
   const [infoMsg, setInfoMsg] = useState('');
 
-  // Block editor content
   const [editorContent, setEditorContent] = useState('');
   const [contentSaving, setContentSaving] = useState(false);
   const [contentMsg, setContentMsg] = useState('');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Video form
   const [showVideoForm, setShowVideoForm] = useState(false);
   const [videoTitle, setVideoTitle] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
@@ -54,26 +50,48 @@ export default function ModuleEditorPage() {
   const [videoMsg, setVideoMsg] = useState('');
   const videoInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Auth ─────────────────────────────────────────────────
   useEffect(() => {
     setMounted(true);
-    async function init(retries = 3) {
-      let { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (!user && retries > 0) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await supabase.auth.refreshSession();
-        return init(retries - 1);
-      }
+    async function init() {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
 
-      if (!user) { setAuthError(`NO_USER: ${userError?.message || 'Session not found after retries'}`); return; }
-      const { data: profile, error } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
-      if (!profile || profile.role !== 'admin') { setAuthError(`NOT_ADMIN: Profile role is ${profile?.role || 'None'}. Error: ${error?.message || 'Unknown'}`); return; }
+        let userId: string | null = null;
+
+        if (sessionData.session) {
+          userId = sessionData.session.user.id;
+        } else {
+          const { data: refreshData } = await supabase.auth.refreshSession();
+          if (refreshData.session) {
+            userId = refreshData.session.user.id;
+          }
+        }
+
+        if (!userId) {
+          const { data: userData } = await supabase.auth.getUser();
+          if (!userData.user) {
+            setAuthError('NO_USER: Auth session missing! Please log in again.');
+            return;
+          }
+          userId = userData.user.id;
+        }
+
+        const { data: profile } = await supabase
+          .from('users_extended')
+          .select('role')
+          .eq('id', userId)
+          .single();
+
+        if (!profile || profile.role !== 'admin') {
+          setAuthError(`NOT_ADMIN: Profile role is ${profile?.role || 'None'}`);
+        }
+      } catch (err: any) {
+        setAuthError(`ERROR: ${err.message}`);
+      }
     }
     init();
   }, []);
 
-  // ── Load module ─────────────────────────────────────────
   const loadModule = useCallback(async () => {
     const res = await fetch('/api/modules');
     const data = await res.json();
@@ -95,7 +113,6 @@ export default function ModuleEditorPage() {
 
   useEffect(() => { loadModule(); loadVideos(); }, [loadModule, loadVideos]);
 
-  // ── Save module info ─────────────────────────────────────
   async function saveInfo() {
     setInfoSaving(true);
     const res = await fetch('/api/modules', {
@@ -108,7 +125,6 @@ export default function ModuleEditorPage() {
     setTimeout(() => setInfoMsg(''), 2500);
   }
 
-  // ── Auto-save content (debounced) ─────────────────────
   function handleContentChange(html: string) {
     setEditorContent(html);
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -125,7 +141,6 @@ export default function ModuleEditorPage() {
     }, 1500);
   }
 
-  // ── Add Video ─────────────────────────────────────────
   async function handleAddVideo(e: React.FormEvent) {
     e.preventDefault();
     if (!videoTitle.trim()) return;
@@ -134,7 +149,6 @@ export default function ModuleEditorPage() {
 
     let finalUrl = videoUrl;
 
-    // If uploading a file to Bunny Stream
     if (videoProv === 'bunny' && videoFile) {
       const fd = new FormData();
       fd.append('file', videoFile);
@@ -183,12 +197,14 @@ export default function ModuleEditorPage() {
     loadVideos();
   }
 
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    window.location.href = '/login';
+  }
+
   if (loading) {
     return (
-      <div 
-        suppressHydrationWarning 
-        style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}
-      >
+      <div suppressHydrationWarning style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
         <span className="loader" style={{ borderTopColor: '#FF2A55' }} />
       </div>
     );
@@ -198,17 +214,21 @@ export default function ModuleEditorPage() {
 
   if (authError) {
     return (
-      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: 'red', minHeight: '100vh' }}>
-        <h1>Admin Authentication Failed (Module Editor)</h1>
-        <p style={{ fontSize: 20 }}>{authError}</p>
-        <button onClick={() => { supabase.auth.signOut().then(() => window.location.href = '/login') }} style={{ marginTop: 20, padding: 10, cursor: 'pointer' }}>Sign Out & Try Again</button>
+      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: '#b91c1c', minHeight: '100vh' }}>
+        <h1>Admin Authentication Failed</h1>
+        <p style={{ fontSize: 16, marginTop: 12 }}>{authError}</p>
+        <button
+          onClick={handleLogout}
+          style={{ marginTop: 20, padding: '12px 24px', cursor: 'pointer', background: 'white', color: '#b91c1c', border: 'none', borderRadius: 8, fontWeight: 700 }}
+        >
+          Sign Out &amp; Try Again
+        </button>
       </div>
     );
   }
 
   return (
     <div className="module-editor-page" suppressHydrationWarning>
-      {/* Navbar */}
       <nav className="navbar">
         <a href="/admin" className="navbar-logo">
           <img src="/logo.png" alt="Pin Power" style={{ width: 120, height: 'auto', objectFit: 'contain' }} />
@@ -220,10 +240,7 @@ export default function ModuleEditorPage() {
       </nav>
 
       <div className="module-editor-layout">
-        {/* Left panel */}
         <aside className="module-editor-sidebar">
-
-          {/* Module Info */}
           <div className="module-editor-section">
             <h3 className="module-editor-section-title">📋 Module Info</h3>
             <div className="form-group" style={{ marginBottom: 12 }}>
@@ -237,20 +254,8 @@ export default function ModuleEditorPage() {
             <div className="form-group" style={{ marginBottom: 16 }}>
               <label className="form-label">Status</label>
               <div style={{ display: 'flex', gap: 10 }}>
-                <button
-                  className={`btn btn-sm ${editStatus === 'draft' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ flex: 1 }}
-                  onClick={() => setEditStatus('draft')}
-                >
-                  📝 Draft
-                </button>
-                <button
-                  className={`btn btn-sm ${editStatus === 'published' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ flex: 1 }}
-                  onClick={() => setEditStatus('published')}
-                >
-                  🚀 Published
-                </button>
+                <button className={`btn btn-sm ${editStatus === 'draft' ? 'btn-primary' : 'btn-ghost'}`} style={{ flex: 1 }} onClick={() => setEditStatus('draft')}>📝 Draft</button>
+                <button className={`btn btn-sm ${editStatus === 'published' ? 'btn-primary' : 'btn-ghost'}`} style={{ flex: 1 }} onClick={() => setEditStatus('published')}>🚀 Published</button>
               </div>
             </div>
             <button className="btn btn-primary btn-sm" onClick={saveInfo} disabled={infoSaving} style={{ width: '100%' }}>
@@ -259,7 +264,6 @@ export default function ModuleEditorPage() {
             {infoMsg && <div className={`alert ${infoMsg.startsWith('✅') ? 'alert-success' : 'alert-error'}`} style={{ marginTop: 8, fontSize: 13 }}>{infoMsg}</div>}
           </div>
 
-          {/* Videos */}
           <div className="module-editor-section">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <h3 className="module-editor-section-title" style={{ marginBottom: 0 }}>🎬 Videos ({videos.length})</h3>
@@ -276,33 +280,24 @@ export default function ModuleEditorPage() {
                   <label className="form-label">Video Title *</label>
                   <input className="form-input" placeholder="Lesson 1: Introduction" value={videoTitle} onChange={e => setVideoTitle(e.target.value)} required />
                 </div>
-
                 <div className="form-group">
                   <label className="form-label">Source</label>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                    <label className="radio-label">
-                      <input type="radio" checked={videoProv === 'paste'} onChange={() => setVideoProv('paste')} /> Paste URL
-                    </label>
-                    <label className="radio-label">
-                      <input type="radio" checked={videoProv === 'bunny'} onChange={() => setVideoProv('bunny')} /> Upload to Bunny
-                    </label>
+                    <label className="radio-label"><input type="radio" checked={videoProv === 'paste'} onChange={() => setVideoProv('paste')} /> Paste URL</label>
+                    <label className="radio-label"><input type="radio" checked={videoProv === 'bunny'} onChange={() => setVideoProv('bunny')} /> Upload to Bunny</label>
                   </div>
                 </div>
-
                 {videoProv === 'paste' ? (
                   <div className="form-group">
                     <label className="form-label">Bunny Stream Embed URL</label>
                     <input className="form-input" placeholder="https://iframe.mediadelivery.net/embed/..." value={videoUrl} onChange={e => setVideoUrl(e.target.value)} />
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Paste your Bunny Stream embed URL</span>
                   </div>
                 ) : (
                   <div className="form-group">
                     <label className="form-label">Upload Video File</label>
                     <input ref={videoInputRef} type="file" accept="video/*" className="form-input" style={{ padding: 8 }} onChange={e => setVideoFile(e.target.files?.[0] || null)} />
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Will upload to Bunny Stream (requires BUNNY_STREAM_* env vars)</span>
                   </div>
                 )}
-
                 <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={videoUploading}>
                   {videoUploading ? '⏳ Uploading…' : '✅ Add Video'}
                 </button>
@@ -328,7 +323,6 @@ export default function ModuleEditorPage() {
           </div>
         </aside>
 
-        {/* Right panel — block editor */}
         <main className="module-editor-main">
           <div className="module-editor-content-header">
             <div>
@@ -341,7 +335,6 @@ export default function ModuleEditorPage() {
             </div>
           </div>
 
-          {/* Video preview strip */}
           {videos.length > 0 && (
             <div className="video-preview-strip">
               <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10 }}>
@@ -358,12 +351,11 @@ export default function ModuleEditorPage() {
             </div>
           )}
 
-          {/* Block editor */}
           <div className="block-editor-container">
             <BlockEditor
               content={editorContent}
               onChange={handleContentChange}
-              placeholder="Write your module content here — add text, headings, images, links and more…"
+              placeholder="Write your module content here…"
             />
           </div>
         </main>
