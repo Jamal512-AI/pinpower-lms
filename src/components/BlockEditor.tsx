@@ -10,7 +10,7 @@ import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
 import TextAlign from '@tiptap/extension-text-align';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Extension } from '@tiptap/core';
+import { sanitizeHtml } from '@/lib/sanitize-html';
 
 // ─── Font Size Extension ────────────────────────────────────
 declare module '@tiptap/core' {
@@ -22,6 +22,7 @@ declare module '@tiptap/core' {
   }
 }
 
+import { Extension } from '@tiptap/core';
 const FontSize = Extension.create({
   name: 'fontSize',
   addGlobalAttributes() {
@@ -70,9 +71,7 @@ function ToolBtn({
 }
 
 // ─── Upload Progress Overlay ─────────────────────────────────
-function UploadOverlay({ visible, label, progress }: {
-  visible: boolean; label: string; progress: number;
-}) {
+function UploadOverlay({ visible, label, progress }: { visible: boolean; label: string; progress: number }) {
   if (!visible) return null;
   return (
     <div className="editor-upload-overlay">
@@ -102,8 +101,7 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading }: {
 
   function applyLink() {
     if (!linkUrl) { editor!.chain().focus().unsetLink().run(); return; }
-    editor!.chain().focus().extendMarkRange('link')
-      .setLink({ href: linkUrl, target: '_blank' }).run();
+    editor!.chain().focus().extendMarkRange('link').setLink({ href: linkUrl, target: '_blank' }).run();
     setLinkUrl('');
     setShowLink(false);
   }
@@ -119,6 +117,7 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading }: {
         <ToolBtn title="Heading 3" onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })}>H3</ToolBtn>
         <ToolBtn title="Heading 4" onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()} active={editor.isActive('heading', { level: 4 })}>H4</ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Text style */}
@@ -129,6 +128,7 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading }: {
         <ToolBtn title="Strikethrough" onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')}><s>S</s></ToolBtn>
         <ToolBtn title="Code" onClick={() => editor.chain().focus().toggleCode().run()} active={editor.isActive('code')}>{'<>'}</ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Font size */}
@@ -143,11 +143,12 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading }: {
           {FONT_SIZES.map(s => <option key={s} value={String(s)}>{s}px</option>)}
         </select>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Color */}
       <div className="editor-tool-group">
-        <label className="editor-tool-btn" title="Text color" style={{ cursor: 'pointer', position: 'relative' }}>
+        <label className="editor-tool-btn" title="Text color" style={{ cursor: 'pointer', position: 'relative', overflow: 'visible' }}>
           <span>🎨</span>
           <input
             type="color"
@@ -157,6 +158,7 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading }: {
         </label>
         <ToolBtn title="Remove color" onClick={() => editor.chain().focus().unsetColor().run()}>✕</ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Alignment */}
@@ -165,6 +167,7 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading }: {
         <ToolBtn title="Align center" onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })}>☰</ToolBtn>
         <ToolBtn title="Align right" onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })}>➡</ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Lists */}
@@ -174,6 +177,7 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading }: {
         <ToolBtn title="Blockquote" onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')}>❝</ToolBtn>
         <ToolBtn title="Horizontal rule" onClick={() => editor.chain().focus().setHorizontalRule().run()}>——</ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Link */}
@@ -187,27 +191,26 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading }: {
               placeholder="https://..."
               value={linkUrl}
               onChange={e => setLinkUrl(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') applyLink();
-                if (e.key === 'Escape') setShowLink(false);
-              }}
+              onKeyDown={e => { if (e.key === 'Enter') applyLink(); if (e.key === 'Escape') setShowLink(false); }}
               autoFocus
             />
             <button type="button" className="editor-link-apply" onClick={applyLink}>Apply</button>
           </div>
         )}
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Image + Video upload */}
       <div className="editor-tool-group">
-        <ToolBtn title="Upload Image" onClick={onImageUpload} disabled={uploading}>
+        <ToolBtn title="Upload Image (Supabase)" onClick={onImageUpload} disabled={uploading}>
           {uploading ? '⏳' : '🖼️ Image'}
         </ToolBtn>
         <ToolBtn title="Upload Video to Bunny Stream" onClick={onVideoUpload} disabled={uploading}>
           {uploading ? '⏳' : '🎬 Video'}
         </ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* History */}
@@ -227,15 +230,9 @@ interface BlockEditorProps {
   readOnly?: boolean;
 }
 
-export default function BlockEditor({
-  content,
-  onChange,
-  placeholder,
-  readOnly = false,
-}: BlockEditorProps) {
+export default function BlockEditor({ content, onChange, placeholder, readOnly = false }: BlockEditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
-  const isInternalUpdate = useRef(false);
 
   const [uploading, setUploading] = useState(false);
   const [uploadLabel, setUploadLabel] = useState('');
@@ -251,42 +248,26 @@ export default function BlockEditor({
       FontSize,
       Color,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
-      }),
-      TipTapImage.configure({
-        HTMLAttributes: { class: 'editor-img' },
-        // Allow all sources including Supabase URLs
-        allowBase64: true,
-      }),
-      Placeholder.configure({
-        placeholder: placeholder || 'Start writing module content here…',
-      }),
+      Link.configure({ openOnClick: false, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
+      TipTapImage.configure({ HTMLAttributes: { class: 'editor-img' } }),
+      Placeholder.configure({ placeholder: placeholder || 'Start writing module content here…' }),
     ],
     content: content || '',
     editable: !readOnly,
     immediatelyRender: false,
     onUpdate: ({ editor }) => {
-      if (isInternalUpdate.current) return;
       onChange(editor.getHTML());
     },
   });
 
-  // ── KEY FIX: sync external content changes into the editor ──
-  // When the parent loads content from the DB (async), the editor
-  // has already mounted with empty string. We need to set the content
-  // once the real content arrives, without triggering onChange.
   useEffect(() => {
     if (!editor || readOnly) return;
-    const current = editor.getHTML();
-    // Only update if content meaningfully differs and editor is not focused
-    if (content && content !== current && content !== '<p></p>') {
-      isInternalUpdate.current = true;
-      editor.commands.setContent(content, false); // false = don't emit update
-      isInternalUpdate.current = false;
+    const currentHtml = editor.getHTML();
+    const nextHtml = content || '';
+    if (currentHtml !== nextHtml) {
+      editor.commands.setContent(nextHtml, { emitUpdate: false });
     }
-  }, [content, editor, readOnly]);
+  }, [editor, content, readOnly]);
 
   const triggerImageUpload = useCallback(() => {
     imageInputRef.current?.click();
@@ -307,6 +288,7 @@ export default function BlockEditor({
     setUploadLabel('Uploading image…');
     setUploadProgress(10);
 
+    // Retry up to 2 times to handle cold-start timeouts
     let lastError = '';
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -319,22 +301,21 @@ export default function BlockEditor({
           body: fd,
         });
         setUploadProgress(80);
-
+        
+        // Handle non-JSON responses (like 413 Payload Too Large or 500 HTML)
         const contentType = res.headers.get('content-type') || '';
         let data: any = {};
         if (contentType.includes('application/json')) {
           data = await res.json();
         } else {
           const text = await res.text();
-          data.error =
-            res.status === 413
-              ? 'Image too large. Max size 10MB.'
-              : `Server error (${res.status})`;
+          data.error = res.status === 413 ? 'Image too large. Max size 4.5MB.' : `Server error (${res.status})`;
           console.error('Non-JSON response:', text);
         }
 
         if (!res.ok) {
           lastError = data.error || 'Image upload failed';
+          // If it's a server error (5xx), retry
           if (res.status >= 500 && attempt < 1) {
             setUploadLabel('Retrying upload…');
             continue;
@@ -342,19 +323,18 @@ export default function BlockEditor({
           setUploadError(lastError);
         } else {
           setUploadProgress(100);
-          // Insert image with the public Supabase URL
           editor.chain().focus().setImage({ src: data.url, alt: file.name }).run();
-          // Immediately trigger save with the new content
           onChange(editor.getHTML());
           setUploadSuccess('✅ Image uploaded!');
           setTimeout(() => setUploadSuccess(''), 3000);
           lastError = '';
         }
-        break;
+        break; // success or non-retryable error
       } catch {
-        lastError = attempt >= 1
-          ? 'Network error. Please check your connection and try again.'
-          : 'Network error. Retrying…';
+        lastError = 'Network error. Retrying…';
+        if (attempt >= 1) {
+          lastError = 'Network error. Please check your connection and try again.';
+        }
       }
     }
 
@@ -380,6 +360,7 @@ export default function BlockEditor({
       fd.append('file', file);
       fd.append('title', file.name.replace(/\.[^/.]+$/, ''));
 
+      // Simulate progress while waiting
       const progressInterval = setInterval(() => {
         setUploadProgress(p => Math.min(p + 3, 85));
       }, 800);
@@ -390,21 +371,22 @@ export default function BlockEditor({
       const data = await res.json();
 
       if (!res.ok) {
-        setUploadError(data.error || 'Video upload failed.');
+        setUploadError(data.error || 'Video upload failed. Check Bunny Stream API key.');
       } else {
         setUploadProgress(100);
+        // Embed the Bunny iframe into the editor content
         const iframeHtml = `<div class="video-embed-block">
-  <iframe
-    src="${data.embedUrl}"
-    frameborder="0"
-    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+  <iframe 
+    src="${data.embedUrl}" 
+    frameborder="0" 
+    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" 
     allowfullscreen
     style="width:100%; height:480px; border-radius:10px;"
   ></iframe>
 </div>`;
         editor.chain().focus().insertContent(iframeHtml).run();
         onChange(editor.getHTML());
-        setUploadSuccess('✅ Video uploaded to Bunny Stream!');
+        setUploadSuccess(`✅ Video uploaded to Bunny Stream!`);
         setTimeout(() => setUploadSuccess(''), 4000);
       }
     } catch {
@@ -416,23 +398,19 @@ export default function BlockEditor({
     if (videoInputRef.current) videoInputRef.current.value = '';
   }
 
-  // ── Read-only render ───────────────────────────────────────
   if (readOnly) {
+    const safeHtml = sanitizeHtml(content || '');
     return (
       <div
         className="editor-readonly"
-        dangerouslySetInnerHTML={{ __html: content || '' }}
+        dangerouslySetInnerHTML={{ __html: safeHtml }}
       />
     );
   }
 
   return (
     <div className="block-editor-wrap" style={{ position: 'relative' }}>
-      <UploadOverlay
-        visible={uploading}
-        label={uploadLabel}
-        progress={uploadProgress}
-      />
+      <UploadOverlay visible={uploading} label={uploadLabel} progress={uploadProgress} />
 
       <EditorToolbar
         editor={editor}
@@ -443,6 +421,7 @@ export default function BlockEditor({
 
       <EditorContent editor={editor} className="editor-content-area" />
 
+      {/* Status messages */}
       {uploadError && (
         <div className="editor-status editor-status-error">
           ❌ {uploadError}
@@ -454,6 +433,7 @@ export default function BlockEditor({
         </div>
       )}
 
+      {/* Hidden file inputs */}
       <input
         ref={imageInputRef}
         type="file"
