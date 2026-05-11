@@ -46,8 +46,15 @@ export default function DashboardPage() {
   const [queryMsg, setQueryMsg] = useState('');
 
   useEffect(() => {
-    async function loadUser() {
-      const { data: { user: u } } = await supabase.auth.getUser();
+    async function loadUser(retries = 3) {
+      let { data: { user: u } } = await supabase.auth.getUser();
+      
+      if (!u && retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await supabase.auth.refreshSession();
+        return loadUser(retries - 1);
+      }
+
       if (!u) { router.push('/login'); return; }
 
       const { data: profile } = await supabase
