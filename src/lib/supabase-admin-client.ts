@@ -2,25 +2,27 @@ import { createBrowserClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Admin Supabase browser client.
+ * Creates a fresh (non-singleton) Supabase browser client for admin pages.
  *
- * IMPORTANT: Must use the SAME storage key as the student client (`createClient`)
- * because the login page (/login) uses createClient() to sign in.
- * The session cookie is set there, and admin pages must read from the same place.
+ * KEY DESIGN DECISIONS:
+ * 1. isSingleton: false — admin client must NEVER share the student singleton.
+ *    If a student was logged in previously on same browser, the singleton in
+ *    supabase.ts caches their session. Admin pages reading that singleton would
+ *    get "NOT_ADMIN: role is student" — the exact bug we're fixing.
  *
- * Previously this used a separate storageKey ('sb-admin-auth-token') and
- * separate cookie name ('sb-admin-auth'), which caused getUser() to return null
- * even though the session cookie existed — it was just stored under a different key.
+ * 2. No custom storageKey/cookieOptions — the login page (/login) uses the
+ *    default Supabase cookie. Admin client must read the same cookie.
+ *
+ * 3. Not cached globally — each admin page component creates its own instance.
+ *    This ensures no cross-contamination between admin and student sessions,
+ *    and supports 100+ concurrent students + multiple admins simultaneously.
  */
-let _adminBrowserClient: SupabaseClient | null = null;
-
 export function createAdminBrowserClient(): SupabaseClient {
-  if (_adminBrowserClient) return _adminBrowserClient;
-
-  _adminBrowserClient = createBrowserClient(
+  return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      isSingleton: false,
+    }
   );
-
-  return _adminBrowserClient;
 }
