@@ -82,9 +82,16 @@ export default function AdminChatPage() {
 
   // Auth check — admin only
   useEffect(() => {
-    async function init() {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (!user) { setAuthError(`NO_USER: ${userError?.message || 'Session not found'}`); return; }
+    async function init(retries = 3) {
+      let { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (!user && retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await supabase.auth.refreshSession();
+        return init(retries - 1);
+      }
+
+      if (!user) { setAuthError(`NO_USER: ${userError?.message || 'Session not found after retries'}`); return; }
       const { data: profile, error } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
       if (!profile || profile.role !== 'admin') { setAuthError(`NOT_ADMIN: Profile role is ${profile?.role || 'None'}. Error: ${error?.message || 'Unknown'}`); return; }
       setAdminEmail(user.email!);
