@@ -4,12 +4,15 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import Image from 'next/image';
+import { sanitizeHtml } from '@/lib/sanitize-html';
 
 type Module = {
   id: string;
   title: string;
   description: string;
   sort_order: number;
+  content?: string;
+  status?: string;
 };
 
 type ModuleVideo = {
@@ -46,15 +49,8 @@ export default function DashboardPage() {
   const [queryMsg, setQueryMsg] = useState('');
 
   useEffect(() => {
-    async function loadUser(retries = 3) {
-      let { data: { user: u } } = await supabase.auth.getUser();
-      
-      if (!u && retries > 0) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await supabase.auth.refreshSession();
-        return loadUser(retries - 1);
-      }
-
+    async function loadUser() {
+      const { data: { user: u } } = await supabase.auth.getUser();
       if (!u) { router.push('/login'); return; }
 
       const { data: profile } = await supabase
@@ -196,6 +192,7 @@ export default function DashboardPage() {
   const avatarLetter = user?.email?.[0]?.toUpperCase() ?? '?';
   const activeModuleVideos = activeModule ? (videos[activeModule] || []) : [];
   const activeModuleData = modules.find(m => m.id === activeModule);
+  const safeModuleHtml = sanitizeHtml(activeModuleData?.content || '');
 
   // Convert Google Drive share link to embed URL
   function getDriveEmbedUrl(url: string): string {
@@ -281,6 +278,21 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Video Player */}
+              <section className="module-content-panel">
+                <h2 className="section-title" style={{ marginBottom: 10 }}>📖 Module Content</h2>
+                {safeModuleHtml ? (
+                  <div
+                    className="editor-readonly module-content-readonly"
+                    dangerouslySetInnerHTML={{ __html: safeModuleHtml }}
+                  />
+                ) : (
+                  <div className="module-content-empty">
+                    Content for this module will appear here once the admin publishes it.
+                  </div>
+                )}
+              </section>
 
               {/* Video Player */}
               {activeVideo ? (
