@@ -59,8 +59,15 @@ export default function StudentChatPage() {
 
   // Auth check
   useEffect(() => {
-    async function init() {
-      const { data: { user: u } } = await supabase.auth.getUser();
+    async function init(retries = 3) {
+      let { data: { user: u } } = await supabase.auth.getUser();
+      
+      if (!u && retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await supabase.auth.refreshSession();
+        return init(retries - 1);
+      }
+
       if (!u) { router.push('/login'); return; }
       const { data: profile } = await supabase.from('users_extended').select('role, access_status').eq('id', u.id).single();
       if (!profile || profile.access_status !== 'approved') { router.push('/waiting-room'); return; }
