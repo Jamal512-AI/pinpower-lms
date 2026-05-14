@@ -408,6 +408,8 @@ export default function DashboardPage() {
                   ) : null}
                 </div>
 
+                {/* Debug: log module content */}
+                {console.log('Module content:', activeModuleData?.content)}
                 {/* Module Content */}
                 {activeModuleData.content ? (
                   <div 
