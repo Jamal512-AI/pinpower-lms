@@ -9,7 +9,7 @@ type Module = {
   title: string;
   description: string;
   sort_order: number;
-  content?: string; // rich-text HTML from BlockEditor
+  content?: string;
 };
 
 type ModuleVideo = {
@@ -20,6 +20,17 @@ type ModuleVideo = {
   drive_email: string;
   sort_order: number;
 };
+
+function getDriveEmbedUrl(url: string): string {
+  const match = url.match(/\/file\/d\/([^/]+)/);
+  if (match) return `https://drive.google.com/file/d/${match[1]}/preview`;
+  return url;
+}
+
+function hasContent(html?: string): boolean {
+  if (!html) return false;
+  return html.replace(/<[^>]*>/g, '').trim().length > 0;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -32,7 +43,6 @@ export default function DashboardPage() {
   const [activeVideo, setActiveVideo] = useState<ModuleVideo | null>(null);
   const [loadingModules, setLoadingModules] = useState(true);
 
-  // Security
   const [isMounted, setIsMounted] = useState(false);
   const [recordingDetected, setRecordingDetected] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
@@ -40,29 +50,21 @@ export default function DashboardPage() {
   const [wmPos, setWmPos] = useState({ x: 15, y: 20 });
   const wmInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Query form
   const [queryText, setQueryText] = useState('');
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryMsg, setQueryMsg] = useState('');
 
   useEffect(() => {
-    async function loadUser(retries = 3) {
-      let { data: { user: u } } = await supabase.auth.getUser();
-
+    async function loadUser(retries = 3): Promise<void> {
+      const { data: { user: u } } = await supabase.auth.getUser();
       if (!u && retries > 0) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(r => setTimeout(r, 500));
         await supabase.auth.refreshSession();
         return loadUser(retries - 1);
       }
-
       if (!u) { router.push('/login'); return; }
-
       const { data: profile } = await supabase
-        .from('users_extended')
-        .select('role, access_status')
-        .eq('id', u.id)
-        .single();
-
+        .from('users_extended').select('role, access_status').eq('id', u.id).single();
       if (!profile || profile.access_status !== 'approved') { router.push('/waiting-room'); return; }
       if (profile.role === 'admin') { router.push('/admin'); return; }
       setUser({ email: u.email!, id: u.id });
@@ -74,15 +76,13 @@ export default function DashboardPage() {
   useEffect(() => { setIsMounted(true); }, []);
 
   useEffect(() => {
-    async function loadModules() {
+    async function load() {
       const res = await fetch('/api/modules?publishedOnly=true');
       const data = await res.json();
       const mods: Module[] = data.modules || [];
       setModules(mods);
       setLoadingModules(false);
       if (mods.length > 0) setActiveModule(mods[0].id);
-
-      // Load all videos for all modules
       const allVideos: Record<string, ModuleVideo[]> = {};
       await Promise.all(mods.map(async (m) => {
         const r = await fetch(`/api/module-videos?moduleId=${m.id}`);
@@ -91,19 +91,15 @@ export default function DashboardPage() {
       }));
       setVideos(allVideos);
     }
-    loadModules();
+    load();
   }, []);
 
-  // ── Security Suite ──────────────────────────────────────────
   useEffect(() => {
     if (!isMounted) return;
     const md = navigator.mediaDevices;
     if (md) {
-      const original = md.getDisplayMedia;
-      md.getDisplayMedia = async function () {
-        setRecordingDetected(true);
-        throw new Error('Screen capture blocked by DRM policy');
-      };
+      const original = md.getDisplayMedia.bind(md);
+      md.getDisplayMedia = async () => { setRecordingDetected(true); throw new Error('Blocked'); };
       return () => { md.getDisplayMedia = original; };
     }
   }, [isMounted]);
@@ -112,7 +108,7 @@ export default function DashboardPage() {
     if (!isMounted) return;
     function blockKeys(e: KeyboardEvent) {
       if (e.key === 'PrintScreen') { e.preventDefault(); setRecordingDetected(true); return; }
-      if (e.metaKey && e.shiftKey && ['3', '4', '5'].includes(e.key)) { e.preventDefault(); setRecordingDetected(true); return; }
+      if (e.metaKey && e.shiftKey && ['3','4','5'].includes(e.key)) { e.preventDefault(); setRecordingDetected(true); return; }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'I') { e.preventDefault(); return; }
       if (e.key === 'F12') { e.preventDefault(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key === 'u') { e.preventDefault(); return; }
@@ -123,12 +119,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!isMounted || !activeVideo) return;
-    function blockContext(e: MouseEvent) { e.preventDefault(); }
+    const blockContext = (e: MouseEvent) => e.preventDefault();
     document.addEventListener('contextmenu', blockContext, true);
     return () => document.removeEventListener('contextmenu', blockContext, true);
   }, [isMounted, activeVideo]);
 
-  // Watermark movement
   useEffect(() => {
     if (activeVideo && isMounted) {
       wmInterval.current = setInterval(() => {
@@ -140,75 +135,40 @@ export default function DashboardPage() {
     return () => { if (wmInterval.current) clearInterval(wmInterval.current); };
   }, [activeVideo, isMounted]);
 
-  useEffect(() => {
-    if (recordingDetected) {
-      setActiveVideo(null);
-    }
-  }, [recordingDetected]);
+  useEffect(() => { if (recordingDetected) setActiveVideo(null); }, [recordingDetected]);
 
   const dismissRecordingWarning = useCallback(async () => {
     await supabase.auth.signOut();
     router.push('/login');
   }, [supabase, router]);
 
-  function handleVideoSelect(video: ModuleVideo) {
-    setPendingVideo(video);
-    setShowWarning(true);
-  }
-
-  function confirmAndPlayVideo() {
-    if (!pendingVideo) return;
-    setShowWarning(false);
-    setActiveVideo(pendingVideo);
-  }
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    router.push('/login');
-  }
+  function handleVideoSelect(video: ModuleVideo) { setPendingVideo(video); setShowWarning(true); }
+  function confirmAndPlayVideo() { if (!pendingVideo) return; setShowWarning(false); setActiveVideo(pendingVideo); }
+  async function handleLogout() { await supabase.auth.signOut(); router.push('/login'); }
 
   async function submitQuery(e: React.FormEvent) {
     e.preventDefault();
     if (!queryText.trim() || !activeModule) return;
-    setQueryLoading(true);
-    setQueryMsg('');
-
+    setQueryLoading(true); setQueryMsg('');
     const mod = modules.find(m => m.id === activeModule);
     const res = await fetch('/api/queries', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        studentEmail: user?.email,
-        moduleName: mod?.title || activeModule,
-        query: queryText,
-      }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentEmail: user?.email, moduleName: mod?.title || activeModule, query: queryText }),
     });
-
-    if (res.ok) {
-      setQueryMsg('✅ Your question has been submitted! We\'ll get back to you soon.');
-      setQueryText('');
-    } else {
-      setQueryMsg('⚠️ Failed to submit. Please try again.');
-    }
+    if (res.ok) { setQueryMsg("✅ Your question has been submitted! We'll get back to you soon."); setQueryText(''); }
+    else { setQueryMsg('⚠️ Failed to submit. Please try again.'); }
     setQueryLoading(false);
     setTimeout(() => setQueryMsg(''), 5000);
   }
 
-  // FIX 2: only first letter for avatar, no redundant email text next to it
   const avatarLetter = user?.email?.[0]?.toUpperCase() ?? '?';
   const activeModuleVideos = activeModule ? (videos[activeModule] || []) : [];
   const activeModuleData = modules.find(m => m.id === activeModule);
 
-  // Convert Google Drive share link to embed URL
-  function getDriveEmbedUrl(url: string): string {
-    const match = url.match(/\/file\/d\/([^/]+)/);
-    if (match) return `https://drive.google.com/file/d/${match[1]}/preview`;
-    return url;
-  }
-
   return (
     <div className="dashboard-page">
-      {/* ── Navbar — FIX 2: removed duplicate email span ── */}
+
+      {/* Navbar — single email display only */}
       <nav className="navbar">
         <a href="/dashboard" className="navbar-logo">
           <img src="/logo.png" alt="Pin Power" style={{ width: 120, height: 'auto', objectFit: 'contain' }} />
@@ -216,7 +176,6 @@ export default function DashboardPage() {
         <div className="navbar-actions">
           <div className="navbar-user">
             <div className="navbar-avatar">{avatarLetter}</div>
-            {/* Single email display — no duplicate */}
             <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14 }}>{user?.email}</span>
           </div>
           <a href="/chat" className="btn btn-sm" style={{ background: 'rgba(255,42,85,0.25)', color: '#fff', border: '1px solid rgba(255,42,85,0.5)', borderRadius: 8 }}>
@@ -229,7 +188,6 @@ export default function DashboardPage() {
       </nav>
 
       <div className="course-layout">
-        {/* ── Sidebar: Module List ── */}
         <aside className="course-sidebar">
           <div className="sidebar-header">
             <h2>📚 Course Modules</h2>
@@ -237,19 +195,14 @@ export default function DashboardPage() {
           </div>
           <nav className="module-nav">
             {loadingModules ? (
-              <div style={{ padding: '20px', color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>
-                <span className="loader" style={{ borderTopColor: '#FF2A55', borderColor: 'rgba(255,255,255,0.2)' }}></span>
+              <div style={{ padding: '20px', textAlign: 'center' }}>
+                <span className="loader" style={{ borderTopColor: '#FF2A55', borderColor: 'rgba(255,255,255,0.2)' }} />
               </div>
             ) : modules.length === 0 ? (
-              <div style={{ padding: '20px 16px', color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>
-                No modules yet. Check back soon!
-              </div>
+              <div style={{ padding: '20px 16px', color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>No modules yet.</div>
             ) : modules.map((m, i) => (
-              <button
-                key={m.id}
-                className={`module-nav-item ${activeModule === m.id ? 'active' : ''}`}
-                onClick={() => { setActiveModule(m.id); setActiveVideo(null); }}
-              >
+              <button key={m.id} className={`module-nav-item ${activeModule === m.id ? 'active' : ''}`}
+                onClick={() => { setActiveModule(m.id); setActiveVideo(null); }}>
                 <span className="module-nav-num">M{i + 1}</span>
                 <span className="module-nav-title">{m.title}</span>
                 <span className="module-nav-count">{videos[m.id]?.length || 0} 🎬</span>
@@ -258,18 +211,14 @@ export default function DashboardPage() {
           </nav>
         </aside>
 
-        {/* ── Main Content ── */}
         <main className="course-main">
           {activeModuleData ? (
             <>
-              {/* Module Header */}
               <div className="module-header">
                 <div>
                   <div className="module-badge">Module {modules.findIndex(m => m.id === activeModule) + 1}</div>
                   <h1 className="module-title">{activeModuleData.title}</h1>
-                  {activeModuleData.description && (
-                    <p className="module-desc">{activeModuleData.description}</p>
-                  )}
+                  {activeModuleData.description && <p className="module-desc">{activeModuleData.description}</p>}
                 </div>
                 <div className="module-stats">
                   <div className="module-stat">
@@ -283,8 +232,8 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* ── FIX 1: Render rich-text module content from BlockEditor ── */}
-              {activeModuleData.content && activeModuleData.content.trim() && activeModuleData.content !== '<p></p>' && (
+              {/* ── Module rich-text content from BlockEditor ── */}
+              {hasContent(activeModuleData.content) && (
                 <div
                   className="editor-readonly"
                   style={{
@@ -292,60 +241,41 @@ export default function DashboardPage() {
                     border: '1px solid var(--border)',
                     borderRadius: 'var(--radius)',
                     padding: '28px 32px',
-                    marginBottom: 28,
+                    marginBottom: 32,
                     boxShadow: 'var(--shadow-sm)',
                   }}
-                  dangerouslySetInnerHTML={{ __html: activeModuleData.content }}
+                  dangerouslySetInnerHTML={{ __html: activeModuleData.content! }}
                 />
               )}
 
-              {/* Video Player */}
+              {/* Video player */}
               {activeVideo ? (
                 <div className="video-player-container">
                   <div className="video-player-header">
                     <span style={{ fontSize: 22 }}>🎬</span>
                     <h3>{activeVideo.title}</h3>
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      style={{ marginLeft: 'auto', fontSize: 12 }}
-                      onClick={() => setActiveVideo(null)}
-                    >
-                      ✕ Close
-                    </button>
+                    <button className="btn btn-sm btn-ghost" style={{ marginLeft: 'auto', fontSize: 12 }} onClick={() => setActiveVideo(null)}>✕ Close</button>
                   </div>
                   <div className="video-player-body">
                     <div className="video-player-frame" style={{ position: 'relative' }}>
                       <iframe
                         id="course-video-player"
                         src={getDriveEmbedUrl(activeVideo.video_url)}
-                        allowFullScreen
-                        allow="encrypted-media; autoplay"
+                        allowFullScreen allow="encrypted-media; autoplay"
                         title={activeVideo.title}
                         style={{ width: '100%', height: '100%', border: 'none' }}
                       />
-                      {/* Floating Watermark */}
                       {isMounted && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: `${wmPos.y}%`,
-                            left: `${wmPos.x}%`,
-                            pointerEvents: 'none',
-                            zIndex: 10,
-                            transition: 'top 2s ease-in-out, left 2s ease-in-out',
-                            userSelect: 'none',
-                            whiteSpace: 'nowrap',
-                            color: 'rgba(255, 255, 255, 0.38)',
-                            fontSize: 13,
-                            fontWeight: 700,
-                            letterSpacing: 1,
-                            textShadow: '0 1px 8px rgba(0,0,0,0.9)',
-                            fontFamily: 'monospace',
-                            padding: '3px 8px',
-                            borderRadius: 4,
-                            background: 'rgba(0,0,0,0.25)',
-                          }}
-                        >
+                        <div style={{
+                          position: 'absolute', top: `${wmPos.y}%`, left: `${wmPos.x}%`,
+                          pointerEvents: 'none', zIndex: 10,
+                          transition: 'top 2s ease-in-out, left 2s ease-in-out',
+                          userSelect: 'none', whiteSpace: 'nowrap',
+                          color: 'rgba(255,255,255,0.38)', fontSize: 13, fontWeight: 700,
+                          letterSpacing: 1, textShadow: '0 1px 8px rgba(0,0,0,0.9)',
+                          fontFamily: 'monospace', padding: '3px 8px', borderRadius: 4,
+                          background: 'rgba(0,0,0,0.25)',
+                        }}>
                           🔒 {user?.email}
                         </div>
                       )}
@@ -362,22 +292,15 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* Video List for this module */}
+              {/* Lesson list */}
               <div style={{ marginTop: 28 }}>
                 <h2 className="section-title">🎬 Lessons in this Module</h2>
                 {activeModuleVideos.length === 0 ? (
-                  <div className="empty-state">
-                    <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-                    <p>No videos uploaded yet for this module. Check back soon!</p>
-                  </div>
+                  <div className="empty-state"><div style={{ fontSize: 40, marginBottom: 12 }}>📭</div><p>No videos yet. Check back soon!</p></div>
                 ) : (
                   <div className="lesson-list">
                     {activeModuleVideos.map((v, i) => (
-                      <div
-                        key={v.id}
-                        className={`lesson-item ${activeVideo?.id === v.id ? 'active' : ''}`}
-                        onClick={() => handleVideoSelect(v)}
-                      >
+                      <div key={v.id} className={`lesson-item ${activeVideo?.id === v.id ? 'active' : ''}`} onClick={() => handleVideoSelect(v)}>
                         <div className="lesson-num">{i + 1}</div>
                         <div className="lesson-info">
                           <div className="lesson-title">{v.title}</div>
@@ -390,96 +313,65 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              {/* Student Query Section */}
+              {/* Ask a question */}
               <div className="query-section">
                 <h2 className="section-title">💬 Ask a Question</h2>
                 <p style={{ color: 'var(--text-secondary)', marginBottom: 20, fontSize: 14 }}>
                   Have a question about <strong>{activeModuleData.title}</strong>? Submit it below and our team will get back to you.
                 </p>
                 {queryMsg && (
-                  <div className={`alert ${queryMsg.startsWith('✅') ? 'alert-success' : 'alert-error'}`} style={{ marginBottom: 16 }}>
-                    {queryMsg}
-                  </div>
+                  <div className={`alert ${queryMsg.startsWith('✅') ? 'alert-success' : 'alert-error'}`} style={{ marginBottom: 16 }}>{queryMsg}</div>
                 )}
                 <form onSubmit={submitQuery} className="query-form">
-                  <textarea
-                    className="form-input query-textarea"
+                  <textarea className="form-input query-textarea"
                     placeholder={`Type your question about "${activeModuleData.title}" here...`}
-                    value={queryText}
-                    onChange={e => setQueryText(e.target.value)}
-                    rows={4}
-                    required
-                  />
+                    value={queryText} onChange={e => setQueryText(e.target.value)} rows={4} required />
                   <button type="submit" className="btn btn-primary" disabled={queryLoading}>
-                    {queryLoading ? <><span className="loader"></span> Submitting…</> : '📤 Submit Question'}
+                    {queryLoading ? <><span className="loader" /> Submitting…</> : '📤 Submit Question'}
                   </button>
                 </form>
               </div>
             </>
           ) : (
             <div className="empty-state" style={{ minHeight: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-              {loadingModules ? (
-                <span className="loader" style={{ borderTopColor: '#FF2A55', borderColor: 'rgba(0,0,0,0.1)', width: 40, height: 40, borderWidth: 4 }}></span>
-              ) : (
-                <>
-                  <div style={{ fontSize: 56, marginBottom: 16 }}>📭</div>
-                  <p style={{ color: 'var(--text-muted)' }}>No course content available yet. Check back soon!</p>
-                </>
-              )}
+              {loadingModules
+                ? <span className="loader" style={{ borderTopColor: '#FF2A55', borderColor: 'rgba(0,0,0,0.1)', width: 40, height: 40, borderWidth: 4 }} />
+                : <><div style={{ fontSize: 56, marginBottom: 16 }}>📭</div><p style={{ color: 'var(--text-muted)' }}>No course content available yet.</p></>
+              }
             </div>
           )}
         </main>
       </div>
 
-      {/* Legal Warning Modal */}
+      {/* Warning modal */}
       {showWarning && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
-          zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-        }}>
-          <div style={{
-            background: '#1a1a2e', borderRadius: 20, padding: 40, maxWidth: 480,
-            border: '1px solid rgba(255,42,85,0.4)', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
-          }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: '#1a1a2e', borderRadius: 20, padding: 40, maxWidth: 480, border: '1px solid rgba(255,42,85,0.4)', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.6)' }}>
             <div style={{ fontSize: 52, marginBottom: 16 }}>⚠️</div>
             <h2 style={{ color: '#FF2A55', marginBottom: 12, fontSize: 20 }}>Legal Notice</h2>
             <p style={{ color: 'rgba(255,255,255,0.8)', lineHeight: 1.8, marginBottom: 28, fontSize: 14 }}>
               This video is <strong>exclusively licensed</strong> to your account (<strong>{user?.email}</strong>).
               Any screen recording, sharing, or redistribution is a <strong>violation of copyright law</strong>
-              and may result in <strong>account termination and legal action</strong>.
-              <br /><br />
+              and may result in <strong>account termination and legal action</strong>.<br /><br />
               All sessions are logged and watermarked with your identity.
             </p>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-              <button onClick={() => setShowWarning(false)}
-                style={{ padding: '11px 24px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'white', cursor: 'pointer', fontWeight: 600 }}>
-                Cancel
-              </button>
-              <button onClick={confirmAndPlayVideo}
-                style={{ padding: '11px 24px', borderRadius: 10, background: '#FF2A55', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>
-                I Understand — Play
-              </button>
+              <button onClick={() => setShowWarning(false)} style={{ padding: '11px 24px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'white', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
+              <button onClick={confirmAndPlayVideo} style={{ padding: '11px 24px', borderRadius: 10, background: '#FF2A55', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>I Understand — Play</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Recording Detected Blocker */}
+      {/* Recording blocker */}
       {recordingDetected && (
-        <div style={{
-          position: 'fixed', inset: 0, background: '#000',
-          zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexDirection: 'column', padding: 24,
-        }}>
+        <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', padding: 24 }}>
           <div style={{ fontSize: 80, marginBottom: 16 }}>🚫</div>
-          <h1 style={{ color: '#FF2A55', fontSize: 28, marginBottom: 12, textAlign: 'center' }}>
-            Screen Recording Detected
-          </h1>
+          <h1 style={{ color: '#FF2A55', fontSize: 28, marginBottom: 12, textAlign: 'center' }}>Screen Recording Detected</h1>
           <p style={{ color: 'rgba(255,255,255,0.7)', maxWidth: 480, textAlign: 'center', lineHeight: 1.8, marginBottom: 24, fontSize: 15 }}>
             Playback has been <strong style={{ color: '#fff' }}>terminated</strong>. This incident is logged against <strong style={{ color: '#fff' }}>{user?.email}</strong>.
           </p>
-          <button onClick={dismissRecordingWarning}
-            style={{ padding: '14px 36px', borderRadius: 10, background: '#FF2A55', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 16 }}>
+          <button onClick={dismissRecordingWarning} style={{ padding: '14px 36px', borderRadius: 10, background: '#FF2A55', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 16 }}>
             I Understand — Log Me Out
           </button>
         </div>
