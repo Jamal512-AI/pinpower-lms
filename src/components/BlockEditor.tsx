@@ -51,18 +51,9 @@ export const VideoEmbed = Node.create({
           frameborder: '0',
           allowfullscreen: 'true',
           allow: 'accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture',
-          style: 'width: 100%; height: 480px; border-radius: 10px;',
+          style: 'width: 100%; height: 480px; border-radius: 10px; pointer-events: auto',
         },
       ],
-      [
-        'div',
-        {
-          class: 'video-overlay',
-          'data-video-src': src,
-          title: 'Click to play in secure player',
-          style: 'position: absolute; inset: 0; z-index: 10; cursor: pointer; background: transparent;'
-        }
-      ]
     ];
   },
 
