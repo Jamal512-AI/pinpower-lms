@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminSupabaseClient } from '@/lib/supabase-server';
 
-// Use module-level singleton for performance under concurrent load
-const supabase = getAdminSupabaseClient();
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  // Lazy-initialize inside handler so env vars are available at runtime
+  const supabase = getAdminSupabaseClient();
   try {
     const { userId, fingerprint } = await req.json();
     if (!userId || !fingerprint) {
