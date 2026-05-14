@@ -1,6 +1,6 @@
 'use client';
 
-import { useEditor, EditorContent, Editor } from '@tiptap/react';
+import { useEditor, EditorContent, Editor, Node, mergeAttributes } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import TipTapImage from '@tiptap/extension-image';
@@ -9,8 +9,8 @@ import { Color } from '@tiptap/extension-color';
 import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
 import TextAlign from '@tiptap/extension-text-align';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Extension, Node } from '@tiptap/core';
+import { useCallback, useRef, useState, useEffect } from 'react';
+import { Extension } from '@tiptap/core';
 
 // ─── Font Size Extension ────────────────────────────────────
 declare module '@tiptap/core' {
@@ -41,13 +41,162 @@ const FontSize = Extension.create({
   },
   addCommands() {
     return {
-      setFontSize: (size: string) => ({ chain }) =>
+      setFontSize: (size: string) => ({ chain }: any) =>
         chain().setMark('textStyle', { fontSize: size }).run(),
-      unsetFontSize: () => ({ chain }) =>
+      unsetFontSize: () => ({ chain }: any) =>
         chain().setMark('textStyle', { fontSize: null }).run(),
     };
   },
 });
+
+// ─── Video Placeholder Node ──────────────────────────────────
+// Stored as: <div data-video-placeholder data-video-id="..." data-video-title="...">
+const VideoPlaceholderNode = Node.create({
+  name: 'videoPlaceholder',
+  group: 'block',
+  atom: true,
+  draggable: true,
+
+  addAttributes() {
+    return {
+      videoId: { default: '' },
+      videoTitle: { default: 'Video' },
+      videoIndex: { default: 0 },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-video-placeholder]' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      'div',
+      mergeAttributes(HTMLAttributes, {
+        'data-video-placeholder': 'true',
+        'data-video-id': HTMLAttributes.videoId,
+        'data-video-title': HTMLAttributes.videoTitle,
+        'data-video-index': HTMLAttributes.videoIndex,
+        class: 'video-placeholder-block',
+        style: `
+          display:flex; align-items:center; gap:14px;
+          background:linear-gradient(135deg,#0f172a,#1D4B73);
+          border-radius:12px; padding:20px 24px; margin:16px 0;
+          border:2px dashed rgba(255,42,85,0.5); cursor:grab;
+          user-select:none;
+        `,
+      }),
+      [
+        'span',
+        { style: 'font-size:32px;' },
+        '🎬',
+      ],
+      [
+        'span',
+        { style: 'flex:1;' },
+        [
+          'strong',
+          { style: 'color:#fff; font-size:15px; display:block;' },
+          `Video: ${HTMLAttributes.videoTitle}`,
+        ],
+        [
+          'small',
+          { style: 'color:rgba(255,255,255,0.5); font-size:12px;' },
+          'This video will play inline for students here',
+        ],
+      ],
+    ];
+  },
+
+  addNodeView() {
+    return ({ node, getPos, editor: editorInstance }) => {
+      const dom = document.createElement('div');
+      dom.setAttribute('data-video-placeholder', 'true');
+      dom.setAttribute('draggable', 'true');
+      dom.style.cssText = `
+        display:flex; align-items:center; gap:14px;
+        background:linear-gradient(135deg,#0f172a 0%,#1D4B73 100%);
+        border-radius:12px; padding:20px 24px; margin:16px 0;
+        border:2px dashed rgba(255,42,85,0.6); cursor:grab;
+        user-select:none; position:relative;
+      `;
+
+      dom.innerHTML = `
+        <span style="font-size:36px;flex-shrink:0;">🎬</span>
+        <div style="flex:1;min-width:0;">
+          <div style="color:#fff;font-weight:700;font-size:15px;margin-bottom:2px;">
+            ${node.attrs.videoTitle || 'Video'}
+          </div>
+          <div style="color:rgba(255,255,255,0.5);font-size:12px;">
+            Students will see this video embedded here
+          </div>
+        </div>
+        <button
+          data-delete-vp
+          title="Remove video placeholder"
+          style="
+            background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.4);
+            border-radius:6px;color:#f87171;cursor:pointer;padding:6px 10px;
+            font-size:13px;flex-shrink:0;transition:all 0.15s;
+          "
+        >✕ Remove</button>
+      `;
+
+      const btn = dom.querySelector('[data-delete-vp]') as HTMLButtonElement;
+      btn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const pos = typeof getPos === 'function' ? getPos() : null;
+        if (pos !== null && pos !== undefined) {
+          editorInstance.chain().focus().deleteRange({ from: pos, to: pos + node.nodeSize }).run();
+        }
+      });
+
+      return { dom };
+    };
+  },
+});
+
+// ─── ResizableImage Extension ────────────────────────────────
+// Extends the built-in image to persist width/height attributes
+const ResizableImage = TipTapImage.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: null,
+        parseHTML: el => el.getAttribute('width') || el.style.width?.replace('px', '') || null,
+        renderHTML: attrs => {
+          if (!attrs.width) return {};
+          return { width: attrs.width, style: `width:${attrs.width}px;max-width:100%;` };
+        },
+      },
+      height: {
+        default: null,
+        parseHTML: el => el.getAttribute('height') || el.style.height?.replace('px', '') || null,
+        renderHTML: attrs => {
+          if (!attrs.height) return {};
+          return { height: attrs.height, style: `height:${attrs.height}px;` };
+        },
+      },
+    };
+  },
+});
+
+// ─── Types ──────────────────────────────────────────────────
+interface ModuleVideo {
+  id: string;
+  title: string;
+  video_url: string;
+  sort_order: number;
+}
+
+interface BlockEditorProps {
+  content: string;
+  onChange: (html: string) => void;
+  placeholder?: string;
+  readOnly?: boolean;
+  moduleVideos?: ModuleVideo[]; // pass videos from parent
+}
 
 // ─── Toolbar Button ──────────────────────────────────────────
 function ToolBtn({
@@ -69,53 +218,292 @@ function ToolBtn({
   );
 }
 
-// ─── Upload Progress Overlay ─────────────────────────────────
-function UploadOverlay({ visible, label, progress }: {
-  visible: boolean; label: string; progress: number;
-}) {
+// ─── Upload Overlay ──────────────────────────────────────────
+function UploadOverlay({ visible, label, progress }: { visible: boolean; label: string; progress: number }) {
   if (!visible) return null;
   return (
-    <div className="editor-upload-overlay">
-      <div className="editor-upload-card">
-        <div className="editor-upload-spinner" />
-        <div className="editor-upload-label">{label}</div>
-        <div className="editor-upload-bar-wrap">
-          <div className="editor-upload-bar" style={{ width: `${progress}%` }} />
+    <div style={{
+      position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.85)',
+      zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      borderRadius: 12,
+    }}>
+      <div style={{
+        background: '#1e293b', border: '1px solid rgba(255,42,85,0.3)',
+        borderRadius: 14, padding: '28px 36px', textAlign: 'center', minWidth: 260,
+      }}>
+        <div style={{
+          width: 36, height: 36, border: '3px solid rgba(255,42,85,0.25)',
+          borderTop: '3px solid #FF2A55', borderRadius: '50%',
+          animation: 'spin 0.7s linear infinite', margin: '0 auto 14px',
+        }} />
+        <div style={{ color: '#fff', fontWeight: 600, marginBottom: 12, fontSize: 14 }}>{label}</div>
+        <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 99, height: 6, overflow: 'hidden' }}>
+          <div style={{
+            background: 'linear-gradient(90deg,#FF2A55,#ff6b8a)',
+            height: '100%', borderRadius: 99,
+            width: `${progress}%`, transition: 'width 0.3s ease',
+          }} />
         </div>
-        <div className="editor-upload-pct">{progress}%</div>
+        <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 8 }}>{progress}%</div>
       </div>
     </div>
   );
 }
 
-// ─── Module Video Type (used by toolbar + block editor) ─────────────
-interface ModuleVideo {
-  id: string;
-  module_id: string;
-  title: string;
-  video_url: string;
-  drive_email: string;
-  sort_order: number;
+// ─── Image Resize Popup ──────────────────────────────────────
+function ImageResizePopup({
+  visible, x, y, currentWidth, currentHeight, onApply, onClose
+}: {
+  visible: boolean; x: number; y: number;
+  currentWidth: string; currentHeight: string;
+  onApply: (w: string, h: string) => void;
+  onClose: () => void;
+}) {
+  const [w, setW] = useState(currentWidth);
+  const [h, setH] = useState(currentHeight);
+  const [keepRatio, setKeepRatio] = useState(true);
+  const origW = useRef(parseFloat(currentWidth) || 0);
+  const origH = useRef(parseFloat(currentHeight) || 0);
+
+  useEffect(() => {
+    if (visible) {
+      setW(currentWidth);
+      setH(currentHeight);
+      origW.current = parseFloat(currentWidth) || 0;
+      origH.current = parseFloat(currentHeight) || 0;
+    }
+  }, [visible, currentWidth, currentHeight]);
+
+  if (!visible) return null;
+
+  const handleW = (val: string) => {
+    setW(val);
+    if (keepRatio && origW.current && origH.current) {
+      const ratio = origH.current / origW.current;
+      setH(Math.round(parseFloat(val) * ratio).toString());
+    }
+  };
+  const handleH = (val: string) => {
+    setH(val);
+    if (keepRatio && origW.current && origH.current) {
+      const ratio = origW.current / origH.current;
+      setW(Math.round(parseFloat(val) * ratio).toString());
+    }
+  };
+
+  const presets = [
+    { label: '25%', w: Math.round(origW.current * 0.25) },
+    { label: '50%', w: Math.round(origW.current * 0.5) },
+    { label: '75%', w: Math.round(origW.current * 0.75) },
+    { label: '100%', w: origW.current },
+    { label: '400px', w: 400 },
+    { label: '600px', w: 600 },
+    { label: '800px', w: 800 },
+  ];
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: 'fixed',
+        top: Math.min(y, window.innerHeight - 320),
+        left: Math.min(x, window.innerWidth - 300),
+        background: '#fff',
+        border: '1.5px solid #e2e8f0',
+        borderRadius: 12,
+        padding: 16,
+        zIndex: 9999,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+        width: 280,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <strong style={{ fontSize: 14, color: '#0f172a' }}>🖼️ Resize Image</strong>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#94a3b8' }}>✕</button>
+      </div>
+
+      {/* Presets */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 12 }}>
+        {presets.map(p => (
+          <button
+            key={p.label}
+            type="button"
+            onClick={() => {
+              const newW = p.w.toString();
+              const newH = keepRatio && origW.current && origH.current
+                ? Math.round(p.w * (origH.current / origW.current)).toString()
+                : h;
+              setW(newW);
+              setH(newH);
+            }}
+            style={{
+              padding: '3px 8px', fontSize: 11, borderRadius: 6, cursor: 'pointer',
+              background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#475569',
+              fontWeight: 600,
+            }}
+          >{p.label}</button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, display: 'block', marginBottom: 4 }}>WIDTH (px)</label>
+          <input
+            type="number"
+            value={w}
+            onChange={e => handleW(e.target.value)}
+            style={{
+              width: '100%', padding: '7px 10px', border: '1.5px solid #e2e8f0',
+              borderRadius: 8, fontSize: 14, outline: 'none',
+            }}
+          />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, display: 'block', marginBottom: 4 }}>HEIGHT (px)</label>
+          <input
+            type="number"
+            value={h}
+            onChange={e => handleH(e.target.value)}
+            disabled={keepRatio}
+            style={{
+              width: '100%', padding: '7px 10px', border: '1.5px solid #e2e8f0',
+              borderRadius: 8, fontSize: 14, outline: 'none',
+              background: keepRatio ? '#f8fafc' : '#fff',
+            }}
+          />
+        </div>
+      </div>
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={keepRatio}
+          onChange={e => setKeepRatio(e.target.checked)}
+          style={{ width: 15, height: 15 }}
+        />
+        <span style={{ fontSize: 12, color: '#475569' }}>Keep aspect ratio</span>
+      </label>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            flex: 1, padding: '8px 0', borderRadius: 8, border: '1.5px solid #e2e8f0',
+            background: 'transparent', color: '#475569', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+          }}
+        >Cancel</button>
+        <button
+          type="button"
+          onClick={() => onApply(w, h)}
+          style={{
+            flex: 1, padding: '8px 0', borderRadius: 8, border: 'none',
+            background: '#FF2A55', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+          }}
+        >Apply</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Video Placeholder Picker Popup ─────────────────────────
+function VideoPickerPopup({
+  videos, onSelect, onClose
+}: {
+  videos: ModuleVideo[];
+  onSelect: (v: ModuleVideo, idx: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div style={{
+      position: 'absolute', top: 44, left: 0, zIndex: 9999,
+      background: '#fff', border: '1.5px solid #e2e8f0',
+      borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+      minWidth: 280, maxHeight: 320, overflow: 'auto',
+      animation: 'fadeSlideIn 0.18s ease',
+    }}>
+      <div style={{ padding: '12px 14px', borderBottom: '1px solid #f1f5f9' }}>
+        <strong style={{ fontSize: 13, color: '#0f172a' }}>📽️ Insert Video Placeholder</strong>
+        <p style={{ fontSize: 11, color: '#94a3b8', margin: '2px 0 0' }}>
+          Choose which video to embed at cursor position
+        </p>
+      </div>
+      {videos.length === 0 ? (
+        <div style={{ padding: '20px 14px', color: '#94a3b8', fontSize: 13, textAlign: 'center' }}>
+          No videos in this module yet.<br />Add videos from the sidebar first.
+        </div>
+      ) : (
+        <div style={{ padding: '6px' }}>
+          {videos.map((v, idx) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => { onSelect(v, idx); onClose(); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                width: '100%', padding: '10px 12px', borderRadius: 8,
+                border: 'none', background: 'transparent',
+                cursor: 'pointer', textAlign: 'left',
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              <span style={{
+                width: 28, height: 28, borderRadius: 8,
+                background: 'rgba(255,42,85,0.1)', color: '#FF2A55',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: 800, fontSize: 12, flexShrink: 0,
+              }}>{idx + 1}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {v.title}
+                </div>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>Click to insert at cursor</div>
+              </div>
+              <span style={{ marginLeft: 'auto', color: '#FF2A55', fontSize: 16 }}>+</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ padding: 8, borderTop: '1px solid #f1f5f9' }}>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            width: '100%', padding: '7px 0', border: '1px solid #e2e8f0',
+            borderRadius: 8, background: 'transparent', color: '#64748b',
+            cursor: 'pointer', fontSize: 12, fontWeight: 600,
+          }}
+        >Close</button>
+      </div>
+    </div>
+  );
 }
 
 // ─── Toolbar ────────────────────────────────────────────────
-function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, moduleVideos, onInsertVideo }: {
+function EditorToolbar({
+  editor, onImageUpload, onVideoUpload, uploading,
+  moduleVideos, onInsertVideoPlaceholder,
+}: {
   editor: Editor | null;
   onImageUpload: () => void;
   onVideoUpload: () => void;
   uploading: boolean;
-  moduleVideos?: ModuleVideo[];
-  onInsertVideo?: (video: ModuleVideo) => void;
+  moduleVideos: ModuleVideo[];
+  onInsertVideoPlaceholder: (v: ModuleVideo, idx: number) => void;
 }) {
   const [linkUrl, setLinkUrl] = useState('');
   const [showLink, setShowLink] = useState(false);
+  const [showVideoPicker, setShowVideoPicker] = useState(false);
 
   if (!editor) return null;
 
   function applyLink() {
     if (!linkUrl) { editor!.chain().focus().unsetLink().run(); return; }
-    editor!.chain().focus().extendMarkRange('link')
-      .setLink({ href: linkUrl, target: '_blank' }).run();
+    let href = linkUrl.trim();
+    if (!/^https?:\/\//i.test(href)) href = 'https://' + href;
+    editor!.chain().focus().extendMarkRange('link').setLink({ href, target: '_blank' }).run();
     setLinkUrl('');
     setShowLink(false);
   }
@@ -131,6 +519,7 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
         <ToolBtn title="Heading 3" onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })}>H3</ToolBtn>
         <ToolBtn title="Heading 4" onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()} active={editor.isActive('heading', { level: 4 })}>H4</ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Text style */}
@@ -141,6 +530,7 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
         <ToolBtn title="Strikethrough" onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')}><s>S</s></ToolBtn>
         <ToolBtn title="Code" onClick={() => editor.chain().focus().toggleCode().run()} active={editor.isActive('code')}>{'<>'}</ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Font size */}
@@ -155,11 +545,12 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
           {FONT_SIZES.map(s => <option key={s} value={String(s)}>{s}px</option>)}
         </select>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Color */}
       <div className="editor-tool-group">
-        <label className="editor-tool-btn" title="Text color" style={{ cursor: 'pointer', position: 'relative' }}>
+        <label className="editor-tool-btn" title="Text color" style={{ cursor: 'pointer', position: 'relative', overflow: 'visible' }}>
           <span>🎨</span>
           <input
             type="color"
@@ -167,8 +558,9 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
             onChange={e => editor.chain().focus().setColor(e.target.value).run()}
           />
         </label>
-        <ToolBtn title="Remove color" onClick={() => editor.chain().focus().unsetColor().run()}>✕</ToolBtn>
+        <ToolBtn title="Remove color" onClick={() => editor.chain().focus().unsetColor().run()}>✕clr</ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Alignment */}
@@ -177,6 +569,7 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
         <ToolBtn title="Align center" onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })}>☰</ToolBtn>
         <ToolBtn title="Align right" onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })}>➡</ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Lists */}
@@ -186,12 +579,17 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
         <ToolBtn title="Blockquote" onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')}>❝</ToolBtn>
         <ToolBtn title="Horizontal rule" onClick={() => editor.chain().focus().setHorizontalRule().run()}>——</ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
-      {/* Link */}
+      {/* Link — FIXED: opens popup and ensures https:// */}
       <div className="editor-tool-group" style={{ position: 'relative' }}>
-        <ToolBtn title="Add link" onClick={() => setShowLink(v => !v)} active={editor.isActive('link')}>🔗</ToolBtn>
-        <ToolBtn title="Remove link" onClick={() => editor.chain().focus().unsetLink().run()}>🔗✕</ToolBtn>
+        <ToolBtn title="Add / edit link" onClick={() => {
+          const existing = editor.getAttributes('link').href || '';
+          setLinkUrl(existing);
+          setShowLink(v => !v);
+        }} active={editor.isActive('link')}>🔗 Link</ToolBtn>
+        <ToolBtn title="Remove link" onClick={() => { editor.chain().focus().unsetLink().run(); setShowLink(false); }}>🔗✕</ToolBtn>
         {showLink && (
           <div className="editor-link-popup">
             <input
@@ -199,55 +597,47 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
               placeholder="https://..."
               value={linkUrl}
               onChange={e => setLinkUrl(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') applyLink();
-                if (e.key === 'Escape') setShowLink(false);
-              }}
+              onKeyDown={e => { if (e.key === 'Enter') applyLink(); if (e.key === 'Escape') setShowLink(false); }}
               autoFocus
             />
             <button type="button" className="editor-link-apply" onClick={applyLink}>Apply</button>
           </div>
         )}
       </div>
+
       <div className="editor-tool-divider" />
 
       {/* Image + Video upload */}
       <div className="editor-tool-group">
-        <ToolBtn title="Upload Image" onClick={onImageUpload} disabled={uploading}>
+        <ToolBtn title="Upload Image (Supabase)" onClick={onImageUpload} disabled={uploading}>
           {uploading ? '⏳' : '🖼️ Image'}
         </ToolBtn>
         <ToolBtn title="Upload Video to Bunny Stream" onClick={onVideoUpload} disabled={uploading}>
-          {uploading ? '⏳' : '🎬 Video'}
+          {uploading ? '⏳' : '🎬 Upload'}
         </ToolBtn>
       </div>
+
       <div className="editor-tool-divider" />
 
-      {/* Insert Video from sidebar list */}
-      {moduleVideos && moduleVideos.length > 0 && (
-        <>
-          <div className="editor-tool-group" style={{ position: 'relative' }}>
-            <select
-              title="Insert Video"
-              className="editor-font-select"
-              style={{ minWidth: 140, maxWidth: 200 }}
-              value=""
-              onChange={e => {
-                const videoId = e.target.value;
-                if (!videoId || !onInsertVideo) return;
-                const video = moduleVideos.find(v => v.id === videoId);
-                if (video) onInsertVideo(video);
-                e.target.value = '';
-              }}
-            >
-              <option value="" disabled>📽️ Insert Video</option>
-              {moduleVideos.map((v, i) => (
-                <option key={v.id} value={v.id}>{i + 1}. {v.title.slice(0, 30)}{v.title.length > 30 ? '…' : ''}</option>
-              ))}
-            </select>
-          </div>
-          <div className="editor-tool-divider" />
-        </>
-      )}
+      {/* 📽️ Insert Video Placeholder */}
+      <div className="editor-tool-group" style={{ position: 'relative' }}>
+        <ToolBtn
+          title="Insert inline video placeholder at cursor"
+          onClick={() => setShowVideoPicker(v => !v)}
+          active={showVideoPicker}
+        >
+          📽️ Insert Video
+        </ToolBtn>
+        {showVideoPicker && (
+          <VideoPickerPopup
+            videos={moduleVideos}
+            onSelect={onInsertVideoPlaceholder}
+            onClose={() => setShowVideoPicker(false)}
+          />
+        )}
+      </div>
+
+      <div className="editor-tool-divider" />
 
       {/* History */}
       <div className="editor-tool-group">
@@ -258,38 +648,12 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
   );
 }
 
-// ─── Context Menu for Image/Video ───────────────────────────
-interface ContextMenuState {
-  visible: boolean;
-  x: number;
-  y: number;
-  type: 'image' | 'video' | null;
-  imageUrl: string | null;
-  videoHtml: string | null;
-}
-
 // ─── Main Block Editor ───────────────────────────────────────
-interface BlockEditorProps {
-  content: string;
-  onChange: (html: string) => void;
-  placeholder?: string;
-  readOnly?: boolean;
-  moduleVideos?: ModuleVideo[];
-  isAdmin?: boolean;
-}
-
 export default function BlockEditor({
-  content,
-  onChange,
-  placeholder,
-  readOnly = false,
-  moduleVideos = [],
-  isAdmin = false,
+  content, onChange, placeholder, readOnly = false, moduleVideos = [],
 }: BlockEditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
-  const isInternalUpdate = useRef(false);
-  const editorWrapRef = useRef<HTMLDivElement>(null);
 
   const [uploading, setUploading] = useState(false);
   const [uploadLabel, setUploadLabel] = useState('');
@@ -297,15 +661,12 @@ export default function BlockEditor({
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
 
-  // Context menu state
-  const [ctxMenu, setCtxMenu] = useState<ContextMenuState>({
-    visible: false, x: 0, y: 0, type: null, imageUrl: null, videoHtml: null,
+  // Image resize state
+  const [resizePopup, setResizePopup] = useState({
+    visible: false, x: 0, y: 0,
+    currentWidth: '', currentHeight: '',
+    nodePos: -1,
   });
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  // Admin video preview modal
-  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
 
   const editor = useEditor({
     extensions: [
@@ -315,184 +676,129 @@ export default function BlockEditor({
       FontSize,
       Color,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      // FIXED: openOnClick: true so Ctrl/Cmd+click works; added HTMLAttributes
       Link.configure({
-        openOnClick: false,
-        HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
+        openOnClick: false,        // we handle click manually below
+        autolink: true,
+        linkOnPaste: true,
+        HTMLAttributes: {
+          rel: 'noopener noreferrer',
+          target: '_blank',
+          class: 'editor-link',
+        },
       }),
-      TipTapImage.configure({
-        HTMLAttributes: { class: 'editor-img' },
-        allowBase64: true,
-      }),
-      Placeholder.configure({
-        placeholder: placeholder || 'Start writing module content here…',
-      }),
+      ResizableImage.configure({ HTMLAttributes: { class: 'editor-img' } }),
+      Placeholder.configure({ placeholder: placeholder || 'Start writing module content here…' }),
+      VideoPlaceholderNode,
     ],
     content: content || '',
     editable: !readOnly,
     immediatelyRender: false,
-    onUpdate: ({ editor }) => {
-      if (isInternalUpdate.current) return;
-      onChange(editor.getHTML());
+    onUpdate: ({ editor: ed }) => {
+      onChange(ed.getHTML());
     },
   });
 
-  // Sync external content changes
+  // ── Handle link clicks in editor (Ctrl/Cmd+click) ──────────
   useEffect(() => {
-    if (!editor || readOnly) return;
-    const current = editor.getHTML();
-    if (content && content !== current && content !== '<p></p>') {
-      isInternalUpdate.current = true;
-      editor.commands.setContent(content, { emitUpdate: false });
-      isInternalUpdate.current = false;
-    }
-  }, [content, editor, readOnly]);
+    if (!editor) return;
+    const editorDom = editor.view.dom;
 
-  // ── Click handler on editor content to detect image/video clicks ──
-  useEffect(() => {
-    if (!editor || readOnly) return;
-
-    function handleEditorClick(e: MouseEvent) {
+    const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
+      const link = target.closest('a[href]') as HTMLAnchorElement | null;
+      if (!link) return;
 
-      // Check if clicked on an image
-      if (target.tagName === 'IMG' && target.classList.contains('editor-img')) {
+      // Always open links in new tab when clicking in editor
+      if (e.ctrlKey || e.metaKey || e.altKey) {
         e.preventDefault();
-        const rect = (target as HTMLImageElement).getBoundingClientRect();
-        const wrapRect = editorWrapRef.current?.getBoundingClientRect();
-        const x = rect.left - (wrapRect?.left || 0) + rect.width / 2;
-        const y = rect.top - (wrapRect?.top || 0) - 8;
-        setCtxMenu({
-          visible: true,
-          x,
-          y,
-          type: 'image',
-          imageUrl: (target as HTMLImageElement).src,
-          videoHtml: null,
-        });
+        window.open(link.href, '_blank', 'noopener,noreferrer');
         return;
       }
 
-      // Check if clicked inside a video-embed-block iframe wrapper
-      const videoBlock = target.closest('.video-embed-block') as HTMLElement | null;
-      if (videoBlock) {
-        e.preventDefault();
-        const rect = videoBlock.getBoundingClientRect();
-        const wrapRect = editorWrapRef.current?.getBoundingClientRect();
-        const x = rect.left - (wrapRect?.left || 0) + rect.width / 2;
-        const y = rect.top - (wrapRect?.top || 0) - 8;
-        const iframe = videoBlock.querySelector('iframe');
-        setCtxMenu({
-          visible: true,
-          x,
-          y,
-          type: 'video',
-          imageUrl: null,
-          videoHtml: videoBlock.outerHTML,
-        });
-
-        // Store for preview
-        if (iframe) {
-          setPreviewVideoUrl(iframe.src);
-        }
+      // In edit mode, single click = select; prevent navigation
+      if (!readOnly) {
+        // show tooltip or do nothing — user can Ctrl+click to open
         return;
       }
 
-      // Close menu if clicking elsewhere
-      setCtxMenu(prev => ({ ...prev, visible: false }));
-      setDeleteConfirm(false);
-    }
+      // In read-only mode, all clicks open the link
+      e.preventDefault();
+      window.open(link.href, '_blank', 'noopener,noreferrer');
+    };
 
-    const editorEl = editorWrapRef.current;
-    if (editorEl) {
-      editorEl.addEventListener('click', handleEditorClick);
-      return () => editorEl.removeEventListener('click', handleEditorClick);
-    }
+    editorDom.addEventListener('click', handleClick);
+    return () => editorDom.removeEventListener('click', handleClick);
   }, [editor, readOnly]);
 
-  // Close context menu on outside click
+  // ── Handle image click → resize popup ──────────────────────
   useEffect(() => {
-    function handleOutsideClick(e: MouseEvent) {
+    if (!editor || readOnly) return;
+    const editorDom = editor.view.dom;
+
+    const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest('.editor-ctx-menu')) {
-        setCtxMenu(prev => ({ ...prev, visible: false }));
-        setDeleteConfirm(false);
-      }
-    }
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, []);
+      if (target.tagName !== 'IMG') return;
 
-  // ── Remove image from editor (and optionally delete from Supabase) ──
-  async function handleRemoveImage(permanent: boolean) {
-    if (!editor || !ctxMenu.imageUrl) return;
+      const img = target as HTMLImageElement;
+      const rect = img.getBoundingClientRect();
 
-    if (permanent) {
-      setDeleting(true);
-      try {
-        // Extract filename from Supabase URL
-        const url = ctxMenu.imageUrl;
-        const match = url.match(/module-images\/(.+)$/);
-        const filename = match ? match[1] : null;
-
-        if (filename) {
-          await fetch('/api/upload-image', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename }),
-          });
+      // Find node position
+      let nodePos = -1;
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'image') {
+          const dom = editor.view.nodeDOM(pos);
+          if (dom === img || (dom as HTMLElement)?.contains?.(img)) {
+            nodePos = pos;
+            return false;
+          }
         }
-      } catch (err) {
-        console.error('Failed to delete from Supabase:', err);
-      } finally {
-        setDeleting(false);
-      }
-    }
+      });
 
-    // Remove from editor
-    const html = editor.getHTML();
-    // Remove img tag with this src
-    const escapedSrc = ctxMenu.imageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const newHtml = html.replace(new RegExp(`<img[^>]*src="${escapedSrc}"[^>]*>`, 'gi'), '');
-    isInternalUpdate.current = true;
-    editor.commands.setContent(newHtml, { emitUpdate: false });
-    isInternalUpdate.current = false;
+      setResizePopup({
+        visible: true,
+        x: rect.left + window.scrollX,
+        y: rect.bottom + window.scrollY + 8,
+        currentWidth: img.getAttribute('width') || String(img.naturalWidth || img.offsetWidth),
+        currentHeight: img.getAttribute('height') || String(img.naturalHeight || img.offsetHeight),
+        nodePos,
+      });
+    };
+
+    editorDom.addEventListener('click', handleClick);
+    return () => editorDom.removeEventListener('click', handleClick);
+  }, [editor, readOnly]);
+
+  const applyResize = useCallback((w: string, h: string) => {
+    if (!editor || resizePopup.nodePos < 0) return;
+    const node = editor.state.doc.nodeAt(resizePopup.nodePos);
+    if (!node) return;
+
+    editor.chain().focus().updateAttributes('image', {
+      width: w ? parseInt(w) : null,
+      height: h ? parseInt(h) : null,
+    }).run();
+
+    setResizePopup(p => ({ ...p, visible: false }));
     onChange(editor.getHTML());
-    setCtxMenu(prev => ({ ...prev, visible: false }));
-    setDeleteConfirm(false);
-  }
+  }, [editor, resizePopup.nodePos, onChange]);
 
-  // ── Remove video from editor only (no permanent delete) ──
-  function handleRemoveVideo() {
-    if (!editor || !ctxMenu.videoHtml) return;
-
-    const html = editor.getHTML();
-    // Remove the video embed block
-    const iframe = ctxMenu.videoHtml.match(/<iframe[^>]*src="([^"]+)"[^>]*>/);
-    const iframeSrc = iframe ? iframe[1] : null;
-
-    let newHtml = html;
-    if (iframeSrc) {
-      const escapedSrc = iframeSrc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      newHtml = html.replace(
-        new RegExp(`<div[^>]*class="video-embed-block"[^>]*>[\\s\\S]*?<iframe[^>]*src="${escapedSrc}"[^>]*>[\\s\\S]*?<\\/iframe>[\\s\\S]*?<\\/div>`, 'gi'),
-        ''
-      );
-    }
-
-    isInternalUpdate.current = true;
-    editor.commands.setContent(newHtml, { emitUpdate: false });
-    isInternalUpdate.current = false;
+  // ── Insert video placeholder at cursor ─────────────────────
+  const insertVideoPlaceholder = useCallback((v: ModuleVideo, idx: number) => {
+    if (!editor) return;
+    editor.chain().focus().insertContent({
+      type: 'videoPlaceholder',
+      attrs: {
+        videoId: v.id,
+        videoTitle: v.title,
+        videoIndex: idx,
+      },
+    }).run();
     onChange(editor.getHTML());
-    setCtxMenu(prev => ({ ...prev, visible: false }));
-  }
+  }, [editor, onChange]);
 
-  const triggerImageUpload = useCallback(() => {
-    imageInputRef.current?.click();
-  }, []);
-
-  const triggerVideoUpload = useCallback(() => {
-    videoInputRef.current?.click();
-  }, []);
+  const triggerImageUpload = useCallback(() => imageInputRef.current?.click(), []);
+  const triggerVideoUpload = useCallback(() => videoInputRef.current?.click(), []);
 
   // ── Image Upload → Supabase Storage ───────────────────────
   async function handleImageFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -510,12 +816,9 @@ export default function BlockEditor({
       try {
         const fd = new FormData();
         fd.append('file', file);
-
         setUploadProgress(20 + attempt * 30);
-        const res = await fetch('/api/upload-image', {
-          method: 'POST',
-          body: fd,
-        });
+
+        const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
         setUploadProgress(80);
 
         const contentType = res.headers.get('content-type') || '';
@@ -523,34 +826,30 @@ export default function BlockEditor({
         if (contentType.includes('application/json')) {
           data = await res.json();
         } else {
-          const text = await res.text();
-          data.error =
-            res.status === 413
-              ? 'Image too large. Max size 10MB.'
-              : `Server error (${res.status})`;
-          console.error('Non-JSON response:', text);
+          data.error = res.status === 413 ? 'Image too large. Max size 4.5MB.' : `Server error (${res.status})`;
         }
 
         if (!res.ok) {
           lastError = data.error || 'Image upload failed';
-          if (res.status >= 500 && attempt < 1) {
-            setUploadLabel('Retrying upload…');
-            continue;
-          }
+          if (res.status >= 500 && attempt < 1) { setUploadLabel('Retrying…'); continue; }
           setUploadError(lastError);
         } else {
           setUploadProgress(100);
-          editor.chain().focus().setImage({ src: data.url, alt: file.name }).run();
+          // Insert with a sensible default width (600px max)
+          editor.chain().focus().setImage({
+            src: data.url,
+            alt: file.name,
+          }).run();
+          // After inserting, set width=600 by default to avoid huge images
+          editor.chain().focus().updateAttributes('image', { width: 600 }).run();
           onChange(editor.getHTML());
-          setUploadSuccess('✅ Image uploaded!');
-          setTimeout(() => setUploadSuccess(''), 3000);
+          setUploadSuccess('✅ Image uploaded! Click it to resize.');
+          setTimeout(() => setUploadSuccess(''), 4000);
           lastError = '';
         }
         break;
       } catch {
-        lastError = attempt >= 1
-          ? 'Network error. Please check your connection and try again.'
-          : 'Network error. Retrying…';
+        lastError = attempt >= 1 ? 'Network error. Please try again.' : 'Network error. Retrying…';
       }
     }
 
@@ -568,7 +867,7 @@ export default function BlockEditor({
     setUploading(true);
     setUploadError('');
     setUploadSuccess('');
-    setUploadLabel(`Uploading video "${file.name}" to Bunny Stream…`);
+    setUploadLabel(`Uploading "${file.name}" to Bunny Stream…`);
     setUploadProgress(5);
 
     try {
@@ -589,22 +888,14 @@ export default function BlockEditor({
         setUploadError(data.error || 'Video upload failed.');
       } else {
         setUploadProgress(100);
-        const iframeHtml = `<div class="video-embed-block">
-  <iframe
-    src="${data.embedUrl}"
-    frameborder="0"
-    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-    allowfullscreen
-    style="width:100%; height:480px; border-radius:10px;"
-  ></iframe>
-</div>`;
+        const iframeHtml = `<div class="video-embed-block"><iframe src="${data.embedUrl}" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width:100%; height:480px; border-radius:10px;"></iframe></div>`;
         editor.chain().focus().insertContent(iframeHtml).run();
         onChange(editor.getHTML());
         setUploadSuccess('✅ Video uploaded to Bunny Stream!');
         setTimeout(() => setUploadSuccess(''), 4000);
       }
     } catch {
-      setUploadError('Network error uploading video. Please try again.');
+      setUploadError('Network error uploading video.');
     }
 
     setUploading(false);
@@ -612,214 +903,131 @@ export default function BlockEditor({
     if (videoInputRef.current) videoInputRef.current.value = '';
   }
 
-  // ── Read-only render ───────────────────────────────────────
+  // ── READ-ONLY render ──────────────────────────────────────
   if (readOnly) {
+    // In read-only mode, render and make links clickable
     return (
       <div
         className="editor-readonly"
+        onClick={(e) => {
+          const target = e.target as HTMLElement;
+          const link = target.closest('a[href]') as HTMLAnchorElement | null;
+          if (link) {
+            e.preventDefault();
+            window.open(link.href, '_blank', 'noopener,noreferrer');
+          }
+        }}
         dangerouslySetInnerHTML={{ __html: content || '' }}
       />
     );
   }
 
   return (
-    <div className="block-editor-wrap" ref={editorWrapRef} style={{ position: 'relative' }}>
-      <UploadOverlay
-        visible={uploading}
-        label={uploadLabel}
-        progress={uploadProgress}
+    <>
+      <div className="block-editor-wrap" style={{ position: 'relative' }}>
+        <UploadOverlay visible={uploading} label={uploadLabel} progress={uploadProgress} />
+
+        <EditorToolbar
+          editor={editor}
+          onImageUpload={triggerImageUpload}
+          onVideoUpload={triggerVideoUpload}
+          uploading={uploading}
+          moduleVideos={moduleVideos}
+          onInsertVideoPlaceholder={insertVideoPlaceholder}
+        />
+
+        <EditorContent editor={editor} className="editor-content-area" />
+
+        {/* Hint bar */}
+        <div style={{
+          padding: '6px 14px', borderTop: '1px solid #f1f5f9',
+          background: '#fafafa', fontSize: 11, color: '#94a3b8',
+          display: 'flex', gap: 16,
+        }}>
+          <span>💡 Click any uploaded image to resize it</span>
+          <span>·</span>
+          <span>🔗 Ctrl+Click a link to open it</span>
+          <span>·</span>
+          <span>📽️ Use "Insert Video" to embed videos inline</span>
+        </div>
+
+        {/* Status messages */}
+        {uploadError && (
+          <div className="alert alert-error" style={{ margin: '8px 12px', fontSize: 13 }}>❌ {uploadError}</div>
+        )}
+        {uploadSuccess && (
+          <div className="alert alert-success" style={{ margin: '8px 12px', fontSize: 13 }}>{uploadSuccess}</div>
+        )}
+
+        <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageFile} />
+        <input ref={videoInputRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={handleVideoFile} />
+      </div>
+
+      {/* Image resize popup — outside editor wrapper to avoid clipping */}
+      <ImageResizePopup
+        visible={resizePopup.visible}
+        x={resizePopup.x}
+        y={resizePopup.y}
+        currentWidth={resizePopup.currentWidth}
+        currentHeight={resizePopup.currentHeight}
+        onApply={applyResize}
+        onClose={() => setResizePopup(p => ({ ...p, visible: false }))}
       />
 
-      <EditorToolbar
-        editor={editor}
-        onImageUpload={triggerImageUpload}
-        onVideoUpload={triggerVideoUpload}
-        uploading={uploading}
-        moduleVideos={moduleVideos}
-        onInsertVideo={(video) => {
-          if (!editor) return;
-          const iframeHtml = `<div class="video-embed-block">
-  <iframe
-    src="${video.video_url}"
-    frameborder="0"
-    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-    allowfullscreen
-    style="width:100%; height:480px; border-radius:10px;"
-  ></iframe>
-</div>`;
-          editor.chain().focus().insertContent(iframeHtml).run();
-          onChange(editor.getHTML());
-        }}
-      />
-
-      <EditorContent editor={editor} className="editor-content-area" />
-
-      {/* ── Context Menu for Image/Video ── */}
-      {ctxMenu.visible && (
-        <div
-          className="editor-ctx-menu"
-          style={{
-            position: 'absolute',
-            left: Math.min(ctxMenu.x, (editorWrapRef.current?.offsetWidth || 600) - 220),
-            top: ctxMenu.y,
-            zIndex: 200,
-            background: '#fff',
-            border: '1.5px solid var(--border)',
-            borderRadius: 10,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
-            padding: '6px',
-            minWidth: 200,
-            transform: 'translateX(-50%) translateY(-100%)',
-          }}
-        >
-          {ctxMenu.type === 'image' && (
-            <>
-              <div style={{ padding: '6px 10px', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
-                🖼️ Image Options
-              </div>
-
-              {!deleteConfirm ? (
-                <>
-                  <button
-                    className="editor-ctx-btn"
-                    onClick={() => handleRemoveImage(false)}
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    🗑️ Remove from content
-                  </button>
-                  <button
-                    className="editor-ctx-btn editor-ctx-btn-danger"
-                    onClick={() => setDeleteConfirm(true)}
-                  >
-                    ❌ Delete permanently (Supabase)
-                  </button>
-                </>
-              ) : (
-                <div style={{ padding: '8px 10px' }}>
-                  <p style={{ fontSize: 12, color: '#b91c1c', marginBottom: 8, fontWeight: 600 }}>
-                    ⚠️ This will delete the image from Supabase storage permanently. Are you sure?
-                  </p>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      className="editor-ctx-btn editor-ctx-btn-danger"
-                      onClick={() => handleRemoveImage(true)}
-                      disabled={deleting}
-                      style={{ flex: 1, justifyContent: 'center' }}
-                    >
-                      {deleting ? '⏳ Deleting…' : '✓ Yes, Delete'}
-                    </button>
-                    <button
-                      className="editor-ctx-btn"
-                      onClick={() => setDeleteConfirm(false)}
-                      style={{ flex: 1, justifyContent: 'center' }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {ctxMenu.type === 'video' && (
-            <>
-              <div style={{ padding: '6px 10px', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
-                🎬 Video Options
-              </div>
-              <button
-                className="editor-ctx-btn"
-                onClick={() => {
-                  setCtxMenu(prev => ({ ...prev, visible: false }));
-                  // Open preview modal
-                  const iframe = ctxMenu.videoHtml?.match(/<iframe[^>]*src="([^"]+)"/);
-                  if (iframe) setPreviewVideoUrl(iframe[1]);
-                }}
-                style={{ color: 'var(--brand-blue)' }}
-              >
-                ▶ Preview video
-              </button>
-              <button
-                className="editor-ctx-btn editor-ctx-btn-danger"
-                onClick={handleRemoveVideo}
-              >
-                🗑️ Remove video
-                <span style={{ fontSize: 10, opacity: 0.7, display: 'block', fontWeight: 400 }}>
-                  (not deleted from Bunny)
-                </span>
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── Admin Video Preview Modal ── */}
-      {previewVideoUrl && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
-            zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 24,
-          }}
-          onClick={() => setPreviewVideoUrl(null)}
-        >
-          <div
-            style={{
-              background: '#1a1a2e', borderRadius: 16, padding: 24, maxWidth: 900,
-              width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ color: '#fff', fontSize: 16, fontWeight: 700 }}>🎬 Video Preview (Admin)</h3>
-              <button
-                onClick={() => setPreviewVideoUrl(null)}
-                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 14 }}
-              >
-                ✕ Close
-              </button>
-            </div>
-            <div style={{ width: '100%', aspectRatio: '16/9', borderRadius: 10, overflow: 'hidden', background: '#000' }}>
-              <iframe
-                src={previewVideoUrl}
-                frameBorder="0"
-                allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                style={{ width: '100%', height: '100%', border: 'none' }}
-                title="Video Preview"
-              />
-            </div>
-            <p style={{ marginTop: 12, fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>
-              Admin preview — no watermark in edit mode
-            </p>
-          </div>
-        </div>
-      )}
-
-      {uploadError && (
-        <div className="editor-status editor-status-error">
-          ❌ {uploadError}
-        </div>
-      )}
-      {uploadSuccess && (
-        <div className="editor-status editor-status-success">
-          {uploadSuccess}
-        </div>
-      )}
-
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={handleImageFile}
-      />
-      <input
-        ref={videoInputRef}
-        type="file"
-        accept="video/*"
-        style={{ display: 'none' }}
-        onChange={handleVideoFile}
-      />
-    </div>
+      {/* Inline styles for editor-link class & video placeholder */}
+      <style>{`
+        .editor-link {
+          color: #1D4B73 !important;
+          text-decoration: underline !important;
+          cursor: pointer !important;
+        }
+        .editor-link:hover {
+          color: #FF2A55 !important;
+        }
+        .editor-readonly a {
+          color: #1D4B73;
+          text-decoration: underline;
+          cursor: pointer;
+        }
+        .editor-readonly a:hover {
+          color: #FF2A55;
+        }
+        .editor-readonly .video-placeholder-block {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          background: linear-gradient(135deg, #0f172a, #1D4B73);
+          border-radius: 12px;
+          padding: 20px 24px;
+          margin: 16px 0;
+          border: 2px dashed rgba(255,42,85,0.4);
+        }
+        .ProseMirror img.editor-img {
+          max-width: 100%;
+          border-radius: 10px;
+          margin: 12px 0;
+          display: block;
+          box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+          cursor: pointer;
+          outline: 2px solid transparent;
+          transition: outline 0.15s;
+        }
+        .ProseMirror img.editor-img:hover {
+          outline: 2px solid #FF2A55;
+        }
+        .ProseMirror a {
+          color: #1D4B73;
+          text-decoration: underline;
+          cursor: pointer;
+        }
+        .ProseMirror a:hover {
+          color: #FF2A55;
+        }
+        @keyframes fadeSlideIn {
+          from { opacity: 0; transform: translateY(-6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </>
   );
 }
