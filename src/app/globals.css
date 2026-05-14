@@ -1800,3 +1800,68 @@ body {
   .module-editor-sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
   .editor-toolbar { gap: 1px; }
 }
+
+/* ============================================================
+   ADDITIONS TO globals.css — Video Placeholders & Image Resize
+   Append these styles to the bottom of src/app/globals.css
+   ============================================================ */
+
+/* ─── Video Placeholder Block (in read-only / student view) ─ */
+.video-placeholder-block {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(135deg, #0f172a 0%, #1D4B73 100%);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin: 20px 0;
+  border: 2px dashed rgba(255, 42, 85, 0.45);
+  cursor: default;
+  user-select: none;
+}
+
+/* ─── Inline video embed from block editor ─────────────────── */
+.video-embed-block {
+  margin: 20px 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.video-embed-block iframe {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+}
+
+/* ─── Editor image — clickable for resize ──────────────────── */
+.ProseMirror img.editor-img {
+  cursor: pointer !important;
+  outline: 2px solid transparent;
+  transition: outline-color 0.15s;
+}
+.ProseMirror img.editor-img:hover {
+  outline-color: #FF2A55 !important;
+}
+
+/* ─── Editor link styling ──────────────────────────────────── */
+.ProseMirror a, .editor-link {
+  color: #1D4B73 !important;
+  text-decoration: underline !important;
+  cursor: pointer !important;
+}
+.ProseMirror a:hover, .editor-link:hover {
+  color: #FF2A55 !important;
+}
+.editor-readonly a {
+  color: #1D4B73;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.editor-readonly a:hover {
+  color: #FF2A55;
+}
+
+/* ─── Video placeholder in editor (node view) ──────────────── */
+[data-video-placeholder] {
+  -webkit-user-drag: element;
+}
