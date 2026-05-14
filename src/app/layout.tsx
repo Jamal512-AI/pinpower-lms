@@ -1,6 +1,10 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
+// This LMS is fully dynamic — all pages require runtime auth context from Supabase.
+// Setting force-dynamic here cascades to all pages and prevents build-time prerender errors.
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Pin Power LMS | Digital Dynasty',
   description: 'Secure Learning Management System for Digital Dynasty students.',
