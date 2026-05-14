@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { createAdminBrowserClient } from '@/lib/supabase-admin-client';
-import Image from 'next/image';
 import dynamic from 'next/dynamic';
 
 // Lazy-load block editor (avoids SSR issues with TipTap)
@@ -29,6 +28,7 @@ export default function ModuleEditorPage() {
   const [videos, setVideos] = useState<ModuleVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   // Edit module info
   const [editTitle, setEditTitle] = useState('');
@@ -56,11 +56,18 @@ export default function ModuleEditorPage() {
   // ── Auth ─────────────────────────────────────────────────
   useEffect(() => {
     setMounted(true);
-    async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push('/login'); return; }
-      const { data: profile } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
-      if (!profile || profile.role !== 'admin') { router.push('/login'); return; }
+    async function init(retries = 3) {
+      let { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (!user && retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await supabase.auth.refreshSession();
+        return init(retries - 1);
+      }
+
+      if (!user) { setAuthError(`NO_USER: ${userError?.message || 'Session not found after retries'}`); return; }
+      const { data: profile, error } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
+      if (!profile || profile.role !== 'admin') { setAuthError(`NOT_ADMIN: Profile role is ${profile?.role || 'None'}. Error: ${error?.message || 'Unknown'}`); return; }
     }
     init();
   }, []);
@@ -126,7 +133,6 @@ export default function ModuleEditorPage() {
 
     let finalUrl = videoUrl;
 
-    // If uploading a file to Bunny Stream
     if (videoProv === 'bunny' && videoFile) {
       const fd = new FormData();
       fd.append('file', videoFile);
@@ -158,7 +164,7 @@ export default function ModuleEditorPage() {
     });
 
     if (res.ok) {
-      setVideoMsg('✅ Video added!');
+      setVideoMsg('✅ Video added! You can now insert it into the content using 📽️ Insert Video.');
       setVideoTitle(''); setVideoUrl(''); setVideoFile(null); setShowVideoForm(false);
       loadVideos();
     } else {
@@ -166,7 +172,7 @@ export default function ModuleEditorPage() {
       setVideoMsg('❌ ' + d.error);
     }
     setVideoUploading(false);
-    setTimeout(() => setVideoMsg(''), 3000);
+    setTimeout(() => setVideoMsg(''), 4000);
   }
 
   async function deleteVideo(id: string) {
@@ -187,6 +193,16 @@ export default function ModuleEditorPage() {
   }
 
   if (!mounted) return null;
+
+  if (authError) {
+    return (
+      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: 'red', minHeight: '100vh' }}>
+        <h1>Admin Authentication Failed (Module Editor)</h1>
+        <p style={{ fontSize: 20 }}>{authError}</p>
+        <button onClick={() => { supabase.auth.signOut().then(() => window.location.href = '/login') }} style={{ marginTop: 20, padding: 10, cursor: 'pointer' }}>Sign Out & Try Again</button>
+      </div>
+    );
+  }
 
   return (
     <div className="module-editor-page" suppressHydrationWarning>
@@ -281,7 +297,7 @@ export default function ModuleEditorPage() {
                   <div className="form-group">
                     <label className="form-label">Upload Video File</label>
                     <input ref={videoInputRef} type="file" accept="video/*" className="form-input" style={{ padding: 8 }} onChange={e => setVideoFile(e.target.files?.[0] || null)} />
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Will upload to Bunny Stream (requires BUNNY_STREAM_* env vars)</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Will upload to Bunny Stream</span>
                   </div>
                 )}
 
@@ -289,6 +305,16 @@ export default function ModuleEditorPage() {
                   {videoUploading ? '⏳ Uploading…' : '✅ Add Video'}
                 </button>
               </form>
+            )}
+
+            {/* Video list with tip */}
+            {videos.length > 0 && (
+              <div style={{
+                background: 'rgba(255,42,85,0.06)', border: '1px solid rgba(255,42,85,0.15)',
+                borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#FF2A55',
+              }}>
+                💡 Use <strong>📽️ Insert Video</strong> in the editor toolbar to place any video inline within the content.
+              </div>
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
@@ -315,7 +341,10 @@ export default function ModuleEditorPage() {
           <div className="module-editor-content-header">
             <div>
               <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)' }}>{editTitle || mod?.title}</h1>
-              <p style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 4 }}>Module content — visible to enrolled students</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 4 }}>
+                Module content — visible to enrolled students · 
+                <span style={{ color: '#FF2A55', fontWeight: 600 }}> use 📽️ Insert Video to embed videos inline</span>
+              </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {contentSaving && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>⏳ Saving…</span>}
@@ -327,7 +356,7 @@ export default function ModuleEditorPage() {
           {videos.length > 0 && (
             <div className="video-preview-strip">
               <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10 }}>
-                🎬 {videos.length} video{videos.length > 1 ? 's' : ''} in this module
+                🎬 {videos.length} video{videos.length > 1 ? 's' : ''} available — insert them anywhere in the content using the toolbar
               </h4>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 {videos.map((v, i) => (
@@ -340,12 +369,13 @@ export default function ModuleEditorPage() {
             </div>
           )}
 
-          {/* Block editor */}
+          {/* Block editor — now receives moduleVideos */}
           <div className="block-editor-container">
             <BlockEditor
               content={editorContent}
               onChange={handleContentChange}
-              placeholder="Write your module content here — add text, headings, images, links and more…"
+              placeholder="Write your module content here — use 📽️ Insert Video in the toolbar to embed videos at specific positions…"
+              moduleVideos={videos}
             />
           </div>
         </main>
