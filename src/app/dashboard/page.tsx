@@ -1,13 +1,17 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
+import { createPortal } from 'react-dom';
 
 type Module = {
   id: string;
   title: string;
   description: string;
+  content?: string;
   sort_order: number;
 };
 
@@ -166,6 +170,34 @@ export default function DashboardPage() {
     }, 100);
   }
 
+  const avatarLetter = user?.email?.[0]?.toUpperCase() ?? '?';
+  const activeModuleVideos = activeModule ? (videos[activeModule] || []) : [];
+  const activeModuleData = modules.find(m => m.id === activeModule);
+
+  // Handle clicking a video placeholder in the rich text content
+  useEffect(() => {
+    function handleContentVideoClick(e: Event) {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('video-overlay')) {
+        const src = target.getAttribute('data-video-src');
+        if (src) {
+          const video = activeModuleVideos.find(v => v.video_url === src);
+          if (video) {
+            handleVideoSelect(video);
+          } else {
+            setPendingVideo({ id: 'embedded', title: 'Embedded Video', video_url: src, module_id: activeModule!, drive_email: '', sort_order: 0 });
+            setShowWarning(true);
+          }
+        }
+      }
+    }
+    const main = document.querySelector('.course-main');
+    if (main) main.addEventListener('click', handleContentVideoClick);
+    return () => {
+      if (main) main.removeEventListener('click', handleContentVideoClick);
+    };
+  }, [activeModuleVideos, activeModule]);
+
   async function handleLogout() {
     await supabase.auth.signOut();
     router.push('/login');
@@ -198,9 +230,7 @@ export default function DashboardPage() {
     setTimeout(() => setQueryMsg(''), 5000);
   }
 
-  const avatarLetter = user?.email?.[0]?.toUpperCase() ?? '?';
-  const activeModuleVideos = activeModule ? (videos[activeModule] || []) : [];
-  const activeModuleData = modules.find(m => m.id === activeModule);
+
 
   // Convert Google Drive share link to embed URL
   function getDriveEmbedUrl(url: string): string {
@@ -218,40 +248,25 @@ export default function DashboardPage() {
         The data attribute on body drives CSS visibility.
       */}
       <style>{`
-        /* Watermark that persists into fullscreen */
-        #fs-watermark {
-          position: fixed;
-          pointer-events: none;
-          user-select: none;
-          z-index: 2147483647;
-          color: rgba(255,255,255,0.38);
-          font-size: 13px;
-          font-weight: 700;
-          letter-spacing: 1px;
-          text-shadow: 0 1px 8px rgba(0,0,0,0.9);
-          font-family: monospace;
-          padding: 3px 8px;
-          border-radius: 4px;
-          background: rgba(0,0,0,0.25);
-          white-space: nowrap;
-          transition: top 2s ease-in-out, left 2s ease-in-out;
-        }
-        /* Keep it visible when any element is fullscreen */
-        :fullscreen #fs-watermark,
-        :-webkit-full-screen #fs-watermark,
-        :-moz-full-screen #fs-watermark {
-          display: block !important;
-        }
         /* Disable drag on video lesson items */
-        .lesson-item {
+        .lesson-item, .video-overlay {
           -webkit-user-drag: none;
           user-drag: none;
           -webkit-user-select: none;
           user-select: none;
         }
-        .lesson-item * {
+        .lesson-item *, .video-overlay * {
           -webkit-user-drag: none;
           user-drag: none;
+        }
+        .module-content img {
+          max-width: 100%;
+          height: auto;
+          border-radius: 8px;
+        }
+        .module-content iframe {
+          max-width: 100%;
+          border-radius: 10px;
         }
       `}</style>
 
@@ -393,40 +408,14 @@ export default function DashboardPage() {
                   ) : null}
                 </div>
 
-                {/* Video List for this module — NO separate placeholder above list */}
-                <div style={{ marginTop: activeVideo ? 28 : 0 }}>
-                  <h2 className="section-title">🎬 Lessons in this Module</h2>
-                  {activeModuleVideos.length === 0 ? (
-                    <div className="empty-state">
-                      <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-                      <p>No videos uploaded yet for this module. Check back soon!</p>
-                    </div>
-                  ) : (
-                    <div className="lesson-list">
-                      {activeModuleVideos.map((v, i) => (
-                        <div
-                          key={v.id}
-                          draggable={false}
-                          className={`lesson-item ${activeVideo?.id === v.id ? 'active' : ''}`}
-                          onClick={() => handleVideoSelect(v)}
-                        >
-                          <div className="lesson-num">{i + 1}</div>
-                          <div className="lesson-info">
-                            <div className="lesson-title">{v.title}</div>
-                            <div className="lesson-meta">🔐 Protected · Click to play</div>
-                          </div>
-                          <button
-                            className="lesson-play-btn"
-                            tabIndex={-1}
-                            onClick={e => { e.stopPropagation(); handleVideoSelect(v); }}
-                          >
-                            ▶
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {/* Module Content */}
+                {activeModuleData.content && (
+                  <div 
+                    className="module-content" 
+                    style={{ marginTop: 24, fontSize: 16, lineHeight: 1.6, color: 'var(--text-primary)' }}
+                    dangerouslySetInnerHTML={{ __html: activeModuleData.content }} 
+                  />
+                )}
 
                 {/* Student Query Section */}
                 <div className="query-section">
@@ -524,26 +513,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/*
-        ── Fullscreen-persistent watermark ─────────────────────
-        Rendered outside the dashboard div, as a sibling to <body> children.
-        position:fixed + z-index:max ensures it layers above fullscreen iframes
-        in browsers that respect stacking contexts during fullscreen.
-        We also inject a <style> into the fullscreen element via the
-        fullscreenchange event listener below.
-      */}
-      {isMounted && activeVideo && user && (
-        <div
-          id="fs-watermark"
-          style={{
-            top: `${wmPos.y}%`,
-            left: `${wmPos.x}%`,
-          }}
-        >
-          🔒 {user.email}
-        </div>
-      )}
-
       {/* Inject CSS into fullscreen element so watermark is visible there too */}
       {isMounted && activeVideo && (
         <FullscreenWatermarkInjector email={user?.email || ''} wmPos={wmPos} />
@@ -553,70 +522,51 @@ export default function DashboardPage() {
 }
 
 /**
- * Listens for fullscreenchange and injects a watermark overlay
- * directly into the fullscreen element's DOM so it's visible in fullscreen.
+ * Renders a React Portal into the fullscreen element when active.
  */
 function FullscreenWatermarkInjector({ email, wmPos }: { email: string; wmPos: { x: number; y: number } }) {
+  const [fsEl, setFsEl] = useState<HTMLElement | null>(null);
+
   useEffect(() => {
-    if (!email) return;
-
-    function injectWatermark() {
-      const fsEl = document.fullscreenElement as HTMLElement | null;
-      if (!fsEl) {
-        // Fullscreen exited — remove injected watermark
-        const existing = document.getElementById('injected-fs-watermark');
-        if (existing) existing.remove();
-        return;
-      }
-
-      // Remove old injected watermark if exists
-      const existing = fsEl.querySelector('#injected-fs-watermark');
-      if (existing) existing.remove();
-
-      // Create watermark overlay inside the fullscreen element
-      const wm = document.createElement('div');
-      wm.id = 'injected-fs-watermark';
-      wm.textContent = `🔒 ${email}`;
-      wm.style.cssText = `
-        position: absolute;
-        top: ${wmPos.y}%;
-        left: ${wmPos.x}%;
-        pointer-events: none;
-        user-select: none;
-        z-index: 2147483647;
-        color: rgba(255,255,255,0.40);
-        font-size: 14px;
-        font-weight: 700;
-        letter-spacing: 1px;
-        text-shadow: 0 1px 10px rgba(0,0,0,0.95);
-        font-family: monospace;
-        padding: 4px 10px;
-        border-radius: 4px;
-        background: rgba(0,0,0,0.30);
-        white-space: nowrap;
-        transition: top 2s ease-in-out, left 2s ease-in-out;
-      `;
-
-      // Make sure fsEl is position:relative for absolute child
-      if (getComputedStyle(fsEl).position === 'static') {
-        fsEl.style.position = 'relative';
-      }
-
-      fsEl.appendChild(wm);
+    function handleFsChange() {
+      setFsEl(document.fullscreenElement as HTMLElement | null);
     }
-
-    document.addEventListener('fullscreenchange', injectWatermark);
-    document.addEventListener('webkitfullscreenchange', injectWatermark);
-    document.addEventListener('mozfullscreenchange', injectWatermark);
-
+    document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('webkitfullscreenchange', handleFsChange);
+    document.addEventListener('mozfullscreenchange', handleFsChange);
     return () => {
-      document.removeEventListener('fullscreenchange', injectWatermark);
-      document.removeEventListener('webkitfullscreenchange', injectWatermark);
-      document.removeEventListener('mozfullscreenchange', injectWatermark);
-      const existing = document.getElementById('injected-fs-watermark');
-      if (existing) existing.remove();
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('webkitfullscreenchange', handleFsChange);
+      document.removeEventListener('mozfullscreenchange', handleFsChange);
     };
-  }, [email, wmPos]);
+  }, []);
 
-  return null;
+  if (!fsEl || !email) return null;
+
+  return createPortal(
+    <div
+      style={{
+        position: 'absolute',
+        top: `${wmPos.y}%`,
+        left: `${wmPos.x}%`,
+        pointerEvents: 'none',
+        userSelect: 'none',
+        zIndex: 2147483647,
+        color: 'rgba(255,255,255,0.40)',
+        fontSize: '14px',
+        fontWeight: 700,
+        letterSpacing: '1px',
+        textShadow: '0 1px 10px rgba(0,0,0,0.95)',
+        fontFamily: 'monospace',
+        padding: '4px 10px',
+        borderRadius: '4px',
+        background: 'rgba(0,0,0,0.30)',
+        whiteSpace: 'nowrap',
+        transition: 'top 2s ease-in-out, left 2s ease-in-out',
+      }}
+    >
+      🔒 {email}
+    </div>,
+    fsEl
+  );
 }
