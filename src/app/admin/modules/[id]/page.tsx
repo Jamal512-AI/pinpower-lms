@@ -1,14 +1,11 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { createAdminBrowserClient } from '@/lib/supabase-admin-client';
-import dynamicImport from 'next/dynamic';
+import { createClient } from '@/lib/supabase';
+import dynamic from 'next/dynamic';
 
-// Lazy-load block editor (avoids SSR issues with TipTap)
-const BlockEditor = dynamicImport(() => import('@/components/BlockEditor'), { ssr: false });
+const BlockEditor = dynamic(() => import('@/components/BlockEditor'), { ssr: false });
 
 type ModuleVideo = {
   id: string; module_id: string; title: string;
@@ -20,11 +17,18 @@ type ModuleData = {
   sort_order: number; content: string; status: 'draft' | 'published';
 };
 
+/** Convert any Google Drive share/view URL to an embed/preview URL */
+function getDriveEmbedUrl(url: string): string {
+  const match = url.match(/\/file\/d\/([^/]+)/);
+  if (match) return `https://drive.google.com/file/d/${match[1]}/preview`;
+  return url;
+}
+
 export default function ModuleEditorPage() {
   const router = useRouter();
   const params = useParams();
   const moduleId = params.id as string;
-  const supabase = createAdminBrowserClient();
+  const supabase = createClient();
 
   const [mod, setMod] = useState<ModuleData | null>(null);
   const [videos, setVideos] = useState<ModuleVideo[]>([]);
@@ -32,20 +36,20 @@ export default function ModuleEditorPage() {
   const [mounted, setMounted] = useState(false);
   const [authError, setAuthError] = useState('');
 
-  // Edit module info
+  // ── FIX 3: video preview state ──────────────────────────────
+  const [previewVideo, setPreviewVideo] = useState<ModuleVideo | null>(null);
+
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editStatus, setEditStatus] = useState<'draft' | 'published'>('draft');
   const [infoSaving, setInfoSaving] = useState(false);
   const [infoMsg, setInfoMsg] = useState('');
 
-  // Block editor content
   const [editorContent, setEditorContent] = useState('');
   const [contentSaving, setContentSaving] = useState(false);
   const [contentMsg, setContentMsg] = useState('');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Video form
   const [showVideoForm, setShowVideoForm] = useState(false);
   const [videoTitle, setVideoTitle] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
@@ -55,26 +59,49 @@ export default function ModuleEditorPage() {
   const [videoMsg, setVideoMsg] = useState('');
   const videoInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Auth ─────────────────────────────────────────────────
   useEffect(() => {
     setMounted(true);
-    async function init(retries = 3) {
-      let { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (!user && retries > 0) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await supabase.auth.refreshSession();
-        return init(retries - 1);
-      }
+    async function init() {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
 
-      if (!user) { setAuthError(`NO_USER: ${userError?.message || 'Session not found after retries'}`); return; }
-      const { data: profile, error } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
-      if (!profile || profile.role !== 'admin') { setAuthError(`NOT_ADMIN: Profile role is ${profile?.role || 'None'}. Error: ${error?.message || 'Unknown'}`); return; }
+        let userId: string | null = null;
+
+        if (sessionData.session) {
+          userId = sessionData.session.user.id;
+        } else {
+          const { data: refreshData } = await supabase.auth.refreshSession();
+          if (refreshData.session) {
+            userId = refreshData.session.user.id;
+          }
+        }
+
+        if (!userId) {
+          const { data: userData } = await supabase.auth.getUser();
+          if (!userData.user) {
+            setAuthError('NO_USER: Auth session missing! Please log in again.');
+            return;
+          }
+          userId = userData.user.id;
+        }
+
+        const { data: profile } = await supabase
+          .from('users_extended')
+          .select('role')
+          .eq('id', userId)
+          .single();
+
+        if (!profile || profile.role !== 'admin') {
+          setAuthError(`NOT_ADMIN: Profile role is ${profile?.role || 'None'}`);
+        }
+      } catch (err: any) {
+        setAuthError(`ERROR: ${err.message}`);
+      }
     }
     init();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Load module ─────────────────────────────────────────
   const loadModule = useCallback(async () => {
     const res = await fetch('/api/modules');
     const data = await res.json();
@@ -96,7 +123,6 @@ export default function ModuleEditorPage() {
 
   useEffect(() => { loadModule(); loadVideos(); }, [loadModule, loadVideos]);
 
-  // ── Save module info ─────────────────────────────────────
   async function saveInfo() {
     setInfoSaving(true);
     const res = await fetch('/api/modules', {
@@ -109,7 +135,6 @@ export default function ModuleEditorPage() {
     setTimeout(() => setInfoMsg(''), 2500);
   }
 
-  // ── Auto-save content (debounced) ─────────────────────
   function handleContentChange(html: string) {
     setEditorContent(html);
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -126,7 +151,6 @@ export default function ModuleEditorPage() {
     }, 1500);
   }
 
-  // ── Add Video ─────────────────────────────────────────
   async function handleAddVideo(e: React.FormEvent) {
     e.preventDefault();
     if (!videoTitle.trim()) return;
@@ -166,7 +190,7 @@ export default function ModuleEditorPage() {
     });
 
     if (res.ok) {
-      setVideoMsg('✅ Video added! You can now insert it into the content using 📽️ Insert Video.');
+      setVideoMsg('✅ Video added!');
       setVideoTitle(''); setVideoUrl(''); setVideoFile(null); setShowVideoForm(false);
       loadVideos();
     } else {
@@ -174,21 +198,25 @@ export default function ModuleEditorPage() {
       setVideoMsg('❌ ' + d.error);
     }
     setVideoUploading(false);
-    setTimeout(() => setVideoMsg(''), 4000);
+    setTimeout(() => setVideoMsg(''), 3000);
   }
 
   async function deleteVideo(id: string) {
     if (!confirm('Delete this video?')) return;
+    // If we were previewing this video, close the preview
+    if (previewVideo?.id === id) setPreviewVideo(null);
     await fetch(`/api/module-videos?id=${id}`, { method: 'DELETE' });
     loadVideos();
   }
 
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    window.location.href = '/login';
+  }
+
   if (loading) {
     return (
-      <div 
-        suppressHydrationWarning 
-        style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}
-      >
+      <div suppressHydrationWarning style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
         <span className="loader" style={{ borderTopColor: '#FF2A55' }} />
       </div>
     );
@@ -198,17 +226,21 @@ export default function ModuleEditorPage() {
 
   if (authError) {
     return (
-      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: 'red', minHeight: '100vh' }}>
-        <h1>Admin Authentication Failed (Module Editor)</h1>
-        <p style={{ fontSize: 20 }}>{authError}</p>
-        <button onClick={() => { supabase.auth.signOut().then(() => window.location.href = '/login') }} style={{ marginTop: 20, padding: 10, cursor: 'pointer' }}>Sign Out & Try Again</button>
+      <div style={{ padding: 40, fontFamily: 'monospace', color: 'white', background: '#b91c1c', minHeight: '100vh' }}>
+        <h1>Admin Authentication Failed</h1>
+        <p style={{ fontSize: 16, marginTop: 12 }}>{authError}</p>
+        <button
+          onClick={handleLogout}
+          style={{ marginTop: 20, padding: '12px 24px', cursor: 'pointer', background: 'white', color: '#b91c1c', border: 'none', borderRadius: 8, fontWeight: 700 }}
+        >
+          Sign Out &amp; Try Again
+        </button>
       </div>
     );
   }
 
   return (
     <div className="module-editor-page" suppressHydrationWarning>
-      {/* Navbar */}
       <nav className="navbar">
         <a href="/admin" className="navbar-logo">
           <img src="/logo.png" alt="Pin Power" style={{ width: 120, height: 'auto', objectFit: 'contain' }} />
@@ -220,10 +252,8 @@ export default function ModuleEditorPage() {
       </nav>
 
       <div className="module-editor-layout">
-        {/* Left panel */}
+        {/* ── Sidebar ── */}
         <aside className="module-editor-sidebar">
-
-          {/* Module Info */}
           <div className="module-editor-section">
             <h3 className="module-editor-section-title">📋 Module Info</h3>
             <div className="form-group" style={{ marginBottom: 12 }}>
@@ -237,20 +267,8 @@ export default function ModuleEditorPage() {
             <div className="form-group" style={{ marginBottom: 16 }}>
               <label className="form-label">Status</label>
               <div style={{ display: 'flex', gap: 10 }}>
-                <button
-                  className={`btn btn-sm ${editStatus === 'draft' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ flex: 1 }}
-                  onClick={() => setEditStatus('draft')}
-                >
-                  📝 Draft
-                </button>
-                <button
-                  className={`btn btn-sm ${editStatus === 'published' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ flex: 1 }}
-                  onClick={() => setEditStatus('published')}
-                >
-                  🚀 Published
-                </button>
+                <button className={`btn btn-sm ${editStatus === 'draft' ? 'btn-primary' : 'btn-ghost'}`} style={{ flex: 1 }} onClick={() => setEditStatus('draft')}>📝 Draft</button>
+                <button className={`btn btn-sm ${editStatus === 'published' ? 'btn-primary' : 'btn-ghost'}`} style={{ flex: 1 }} onClick={() => setEditStatus('published')}>🚀 Published</button>
               </div>
             </div>
             <button className="btn btn-primary btn-sm" onClick={saveInfo} disabled={infoSaving} style={{ width: '100%' }}>
@@ -259,7 +277,7 @@ export default function ModuleEditorPage() {
             {infoMsg && <div className={`alert ${infoMsg.startsWith('✅') ? 'alert-success' : 'alert-error'}`} style={{ marginTop: 8, fontSize: 13 }}>{infoMsg}</div>}
           </div>
 
-          {/* Videos */}
+          {/* ── Videos ── */}
           <div className="module-editor-section">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <h3 className="module-editor-section-title" style={{ marginBottom: 0 }}>🎬 Videos ({videos.length})</h3>
@@ -276,77 +294,98 @@ export default function ModuleEditorPage() {
                   <label className="form-label">Video Title *</label>
                   <input className="form-input" placeholder="Lesson 1: Introduction" value={videoTitle} onChange={e => setVideoTitle(e.target.value)} required />
                 </div>
-
                 <div className="form-group">
                   <label className="form-label">Source</label>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                    <label className="radio-label">
-                      <input type="radio" checked={videoProv === 'paste'} onChange={() => setVideoProv('paste')} /> Paste URL
-                    </label>
-                    <label className="radio-label">
-                      <input type="radio" checked={videoProv === 'bunny'} onChange={() => setVideoProv('bunny')} /> Upload to Bunny
-                    </label>
+                    <label className="radio-label"><input type="radio" checked={videoProv === 'paste'} onChange={() => setVideoProv('paste')} /> Paste URL</label>
+                    <label className="radio-label"><input type="radio" checked={videoProv === 'bunny'} onChange={() => setVideoProv('bunny')} /> Upload to Bunny</label>
                   </div>
                 </div>
-
                 {videoProv === 'paste' ? (
                   <div className="form-group">
-                    <label className="form-label">Bunny Stream Embed URL</label>
-                    <input className="form-input" placeholder="https://iframe.mediadelivery.net/embed/..." value={videoUrl} onChange={e => setVideoUrl(e.target.value)} />
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Paste your Bunny Stream embed URL</span>
+                    <label className="form-label">Bunny / Drive Embed URL</label>
+                    <input className="form-input" placeholder="https://iframe.mediadelivery.net/embed/... or Drive link" value={videoUrl} onChange={e => setVideoUrl(e.target.value)} />
                   </div>
                 ) : (
                   <div className="form-group">
                     <label className="form-label">Upload Video File</label>
                     <input ref={videoInputRef} type="file" accept="video/*" className="form-input" style={{ padding: 8 }} onChange={e => setVideoFile(e.target.files?.[0] || null)} />
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Will upload to Bunny Stream</span>
                   </div>
                 )}
-
                 <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={videoUploading}>
                   {videoUploading ? '⏳ Uploading…' : '✅ Add Video'}
                 </button>
               </form>
             )}
 
-            {/* Video list with tip */}
-            {videos.length > 0 && (
-              <div style={{
-                background: 'rgba(255,42,85,0.06)', border: '1px solid rgba(255,42,85,0.15)',
-                borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#FF2A55',
-              }}>
-                💡 Use <strong>📽️ Insert Video</strong> in the editor toolbar to place any video inline within the content.
-              </div>
-            )}
-
+            {/* Video list with preview button */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
               {videos.length === 0 ? (
                 <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: '20px 0' }}>No videos yet</div>
               ) : videos.map((v, i) => (
-                <div key={v.id} className="video-list-item">
-                  <div className="video-list-num">{i + 1}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{v.title}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                      {v.video_url.slice(0, 45)}…
+                <div key={v.id} className="video-list-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0, padding: 0, overflow: 'hidden' }}>
+                  {/* Row: number + title + actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px' }}>
+                    <div className="video-list-num">{i + 1}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{v.title}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                        {v.video_url.slice(0, 38)}…
+                      </div>
                     </div>
+                    {/* FIX 3: preview toggle button */}
+                    <button
+                      onClick={() => setPreviewVideo(previewVideo?.id === v.id ? null : v)}
+                      title={previewVideo?.id === v.id ? 'Close preview' : 'Preview video'}
+                      style={{
+                        padding: '4px 8px',
+                        background: previewVideo?.id === v.id ? 'rgba(255,42,85,0.15)' : 'rgba(29,75,115,0.12)',
+                        border: `1px solid ${previewVideo?.id === v.id ? 'rgba(255,42,85,0.35)' : 'rgba(29,75,115,0.25)'}`,
+                        borderRadius: 6,
+                        color: previewVideo?.id === v.id ? 'var(--accent)' : 'var(--brand-blue)',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        flexShrink: 0,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {previewVideo?.id === v.id ? '✕' : '▶'}
+                    </button>
+                    <button onClick={() => deleteVideo(v.id)} className="video-delete-btn" title="Delete video">🗑️</button>
                   </div>
-                  <button onClick={() => deleteVideo(v.id)} className="video-delete-btn" title="Delete video">🗑️</button>
+
+                  {/* Inline video preview panel */}
+                  {previewVideo?.id === v.id && (
+                    <div style={{ borderTop: '1px solid var(--border)', background: '#0d1117', padding: 0 }}>
+                      <iframe
+                        src={getDriveEmbedUrl(v.video_url)}
+                        allow="autoplay; fullscreen; encrypted-media"
+                        allowFullScreen
+                        title={v.title}
+                        style={{
+                          width: '100%',
+                          aspectRatio: '16/9',
+                          border: 'none',
+                          display: 'block',
+                        }}
+                      />
+                      <div style={{ padding: '8px 12px', fontSize: 11, color: 'rgba(255,255,255,0.4)', background: '#0d1117' }}>
+                        🎬 Admin preview — {v.title}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </div>
         </aside>
 
-        {/* Right panel — block editor */}
+        {/* ── Main editor area ── */}
         <main className="module-editor-main">
           <div className="module-editor-content-header">
             <div>
               <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)' }}>{editTitle || mod?.title}</h1>
-              <p style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 4 }}>
-                Module content — visible to enrolled students · 
-                <span style={{ color: '#FF2A55', fontWeight: 600 }}> use 📽️ Insert Video to embed videos inline</span>
-              </p>
+              <p style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 4 }}>Module content — visible to enrolled students</p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {contentSaving && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>⏳ Saving…</span>}
@@ -354,30 +393,69 @@ export default function ModuleEditorPage() {
             </div>
           </div>
 
-          {/* Video preview strip */}
           {videos.length > 0 && (
             <div className="video-preview-strip">
               <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10 }}>
-                🎬 {videos.length} video{videos.length > 1 ? 's' : ''} available — insert them anywhere in the content using the toolbar
+                🎬 {videos.length} video{videos.length > 1 ? 's' : ''} in this module
               </h4>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 {videos.map((v, i) => (
-                  <div key={v.id} className="video-preview-chip">
-                    <span style={{ fontSize: 12 }}>▶</span>
+                  <button
+                    key={v.id}
+                    className="video-preview-chip"
+                    onClick={() => setPreviewVideo(previewVideo?.id === v.id ? null : v)}
+                    style={{
+                      cursor: 'pointer',
+                      border: 'none',
+                      background: previewVideo?.id === v.id ? 'rgba(255,42,85,0.15)' : 'rgba(14,99,183,0.1)',
+                      outline: previewVideo?.id === v.id ? '1.5px solid var(--accent)' : '1px solid rgba(14,99,183,0.2)',
+                    }}
+                    title="Click to preview this video"
+                  >
+                    <span style={{ fontSize: 12 }}>{previewVideo?.id === v.id ? '⏸' : '▶'}</span>
                     <span>{i + 1}. {v.title}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
+
+              {/* Video preview pane in main area */}
+              {previewVideo && (
+                <div style={{
+                  marginTop: 14,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  background: '#0d1117',
+                  border: '1px solid var(--border)',
+                  boxShadow: 'var(--shadow-md)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                    <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14, fontWeight: 600 }}>
+                      🎬 {previewVideo.title}
+                    </span>
+                    <button
+                      onClick={() => setPreviewVideo(null)}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 16, padding: 4 }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <iframe
+                    src={getDriveEmbedUrl(previewVideo.video_url)}
+                    allow="autoplay; fullscreen; encrypted-media"
+                    allowFullScreen
+                    title={previewVideo.title}
+                    style={{ width: '100%', aspectRatio: '16/9', border: 'none', display: 'block' }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
-          {/* Block editor — now receives moduleVideos */}
           <div className="block-editor-container">
             <BlockEditor
               content={editorContent}
               onChange={handleContentChange}
-              placeholder="Write your module content here — use 📽️ Insert Video in the toolbar to embed videos at specific positions…"
-              moduleVideos={videos}
+              placeholder="Write your module content here…"
             />
           </div>
         </main>
