@@ -4,6 +4,8 @@ import { createAdminSupabaseClient } from '@/lib/supabase-server';
 // We store modules in Supabase (modules table) since Google Sheets API needs OAuth.
 // This is the modules CRUD API.
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
