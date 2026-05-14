@@ -88,12 +88,24 @@ function UploadOverlay({ visible, label, progress }: {
   );
 }
 
+// ─── Module Video Type (used by toolbar + block editor) ─────────────
+interface ModuleVideo {
+  id: string;
+  module_id: string;
+  title: string;
+  video_url: string;
+  drive_email: string;
+  sort_order: number;
+}
+
 // ─── Toolbar ────────────────────────────────────────────────
-function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading }: {
+function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, moduleVideos, onInsertVideo }: {
   editor: Editor | null;
   onImageUpload: () => void;
   onVideoUpload: () => void;
   uploading: boolean;
+  moduleVideos?: ModuleVideo[];
+  onInsertVideo?: (video: ModuleVideo) => void;
 }) {
   const [linkUrl, setLinkUrl] = useState('');
   const [showLink, setShowLink] = useState(false);
@@ -210,6 +222,33 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading }: {
       </div>
       <div className="editor-tool-divider" />
 
+      {/* Insert Video from sidebar list */}
+      {moduleVideos && moduleVideos.length > 0 && (
+        <>
+          <div className="editor-tool-group" style={{ position: 'relative' }}>
+            <select
+              title="Insert Video"
+              className="editor-font-select"
+              style={{ minWidth: 140, maxWidth: 200 }}
+              value=""
+              onChange={e => {
+                const videoId = e.target.value;
+                if (!videoId || !onInsertVideo) return;
+                const video = moduleVideos.find(v => v.id === videoId);
+                if (video) onInsertVideo(video);
+                e.target.value = '';
+              }}
+            >
+              <option value="" disabled>📽️ Insert Video</option>
+              {moduleVideos.map((v, i) => (
+                <option key={v.id} value={v.id}>{i + 1}. {v.title.slice(0, 30)}{v.title.length > 30 ? '…' : ''}</option>
+              ))}
+            </select>
+          </div>
+          <div className="editor-tool-divider" />
+        </>
+      )}
+
       {/* History */}
       <div className="editor-tool-group">
         <ToolBtn title="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>↩</ToolBtn>
@@ -235,6 +274,8 @@ interface BlockEditorProps {
   onChange: (html: string) => void;
   placeholder?: string;
   readOnly?: boolean;
+  moduleVideos?: ModuleVideo[];
+  isAdmin?: boolean;
 }
 
 export default function BlockEditor({
@@ -242,6 +283,8 @@ export default function BlockEditor({
   onChange,
   placeholder,
   readOnly = false,
+  moduleVideos = [],
+  isAdmin = false,
 }: BlockEditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -299,7 +342,7 @@ export default function BlockEditor({
     const current = editor.getHTML();
     if (content && content !== current && content !== '<p></p>') {
       isInternalUpdate.current = true;
-      editor.commands.setContent(content, false);
+      editor.commands.setContent(content, { emitUpdate: false });
       isInternalUpdate.current = false;
     }
   }, [content, editor, readOnly]);
@@ -411,7 +454,7 @@ export default function BlockEditor({
     const escapedSrc = ctxMenu.imageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const newHtml = html.replace(new RegExp(`<img[^>]*src="${escapedSrc}"[^>]*>`, 'gi'), '');
     isInternalUpdate.current = true;
-    editor.commands.setContent(newHtml, false);
+    editor.commands.setContent(newHtml, { emitUpdate: false });
     isInternalUpdate.current = false;
     onChange(editor.getHTML());
     setCtxMenu(prev => ({ ...prev, visible: false }));
@@ -437,7 +480,7 @@ export default function BlockEditor({
     }
 
     isInternalUpdate.current = true;
-    editor.commands.setContent(newHtml, false);
+    editor.commands.setContent(newHtml, { emitUpdate: false });
     isInternalUpdate.current = false;
     onChange(editor.getHTML());
     setCtxMenu(prev => ({ ...prev, visible: false }));
@@ -592,6 +635,21 @@ export default function BlockEditor({
         onImageUpload={triggerImageUpload}
         onVideoUpload={triggerVideoUpload}
         uploading={uploading}
+        moduleVideos={moduleVideos}
+        onInsertVideo={(video) => {
+          if (!editor) return;
+          const iframeHtml = `<div class="video-embed-block">
+  <iframe
+    src="${video.video_url}"
+    frameborder="0"
+    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+    allowfullscreen
+    style="width:100%; height:480px; border-radius:10px;"
+  ></iframe>
+</div>`;
+          editor.chain().focus().insertContent(iframeHtml).run();
+          onChange(editor.getHTML());
+        }}
       />
 
       <EditorContent editor={editor} className="editor-content-area" />
