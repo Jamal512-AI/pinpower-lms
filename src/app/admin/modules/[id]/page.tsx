@@ -1,12 +1,14 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { createAdminBrowserClient } from '@/lib/supabase-admin-client';
-import dynamic from 'next/dynamic';
+import dynamicImport from 'next/dynamic';
 
 // Lazy-load block editor (avoids SSR issues with TipTap)
-const BlockEditor = dynamic(() => import('@/components/BlockEditor'), { ssr: false });
+const BlockEditor = dynamicImport(() => import('@/components/BlockEditor'), { ssr: false });
 
 type ModuleVideo = {
   id: string; module_id: string; title: string;
