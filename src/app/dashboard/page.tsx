@@ -409,12 +409,16 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Module Content */}
-                {activeModuleData.content && (
+                {activeModuleData.content ? (
                   <div 
-                    className="module-content" 
-                    style={{ marginTop: 24, fontSize: 16, lineHeight: 1.6, color: 'var(--text-primary)' }}
+                    className="module-content ProseMirror editor-content-area" 
+                    style={{ marginTop: 24, fontSize: 16, lineHeight: 1.6, color: 'var(--text-primary)', outline: 'none' }}
                     dangerouslySetInnerHTML={{ __html: activeModuleData.content }} 
                   />
+                ) : (
+                  <div className="module-content" style={{ marginTop: 24, fontSize: 16, color: 'var(--text-muted)' }}>
+                    No content available for this module.
+                  </div>
                 )}
 
                 {/* Student Query Section */}
