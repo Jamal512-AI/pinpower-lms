@@ -10,7 +10,7 @@ import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
 import TextAlign from '@tiptap/extension-text-align';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Extension, Node, mergeAttributes } from '@tiptap/core';
+import { Extension, Node } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 
 // ─── Video Embed Extension ──────────────────────────────────
@@ -67,7 +67,6 @@ export const VideoEmbed = Node.create({
           onMouseEnter={() => setHover(true)}
           onMouseLeave={() => setHover(false)}
         >
-          {/* Draggable handle for editor, disabled for student */}
           {editor.isEditable && (
             <div data-drag-handle style={{ position: 'absolute', top: 8, left: 8, zIndex: 20, cursor: 'grab', background: 'rgba(0,0,0,0.5)', padding: '4px', borderRadius: '4px' }}>
               ⠿
@@ -85,19 +84,9 @@ export const VideoEmbed = Node.create({
               onClick={() => deleteNode()}
               title="Remove video"
               style={{
-                position: 'absolute',
-                top: 8,
-                right: 8,
-                background: '#ff2a55',
-                color: 'white',
-                border: 'none',
-                borderRadius: 4,
-                padding: '6px 10px',
-                cursor: 'pointer',
-                zIndex: 20,
-                fontSize: 12,
-                fontWeight: 'bold',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                position: 'absolute', top: 8, right: 8, background: '#ff2a55', color: 'white',
+                border: 'none', borderRadius: 4, padding: '6px 10px', cursor: 'pointer',
+                zIndex: 20, fontSize: 12, fontWeight: 'bold', boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
               }}
             >
               🗑️ Remove
@@ -147,29 +136,19 @@ const FontSize = Extension.create({
 });
 
 // ─── Toolbar Button ──────────────────────────────────────────
-function ToolBtn({
-  onClick, active, title, children, disabled
-}: {
+function ToolBtn({ onClick, active, title, children, disabled }: {
   onClick: () => void; active?: boolean; title: string;
   children: React.ReactNode; disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      title={title}
-      disabled={disabled}
-      onClick={onClick}
-      className={`editor-tool-btn ${active ? 'active' : ''}`}
-    >
+    <button type="button" title={title} disabled={disabled} onClick={onClick} className={`editor-tool-btn ${active ? 'active' : ''}`}>
       {children}
     </button>
   );
 }
 
 // ─── Upload Progress Overlay ─────────────────────────────────
-function UploadOverlay({ visible, label, progress }: {
-  visible: boolean; label: string; progress: number;
-}) {
+function UploadOverlay({ visible, label, progress }: { visible: boolean; label: string; progress: number; }) {
   if (!visible) return null;
   return (
     <div className="editor-upload-overlay">
@@ -185,7 +164,6 @@ function UploadOverlay({ visible, label, progress }: {
   );
 }
 
-// ─── Module Video Type (used by toolbar + block editor) ─────────────
 interface ModuleVideo {
   id: string;
   module_id: string;
@@ -211,8 +189,7 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
 
   function applyLink() {
     if (!linkUrl) { editor!.chain().focus().unsetLink().run(); return; }
-    editor!.chain().focus().extendMarkRange('link')
-      .setLink({ href: linkUrl, target: '_blank' }).run();
+    editor!.chain().focus().extendMarkRange('link').setLink({ href: linkUrl, target: '_blank' }).run();
     setLinkUrl('');
     setShowLink(false);
   }
@@ -221,7 +198,6 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
 
   return (
     <div className="editor-toolbar">
-      {/* Headings */}
       <div className="editor-tool-group">
         <ToolBtn title="Normal text" onClick={() => editor.chain().focus().setParagraph().run()} active={editor.isActive('paragraph')}>¶</ToolBtn>
         <ToolBtn title="Heading 2" onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })}>H2</ToolBtn>
@@ -230,7 +206,6 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
       </div>
       <div className="editor-tool-divider" />
 
-      {/* Text style */}
       <div className="editor-tool-group">
         <ToolBtn title="Bold" onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')}><b>B</b></ToolBtn>
         <ToolBtn title="Italic" onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')}><i>I</i></ToolBtn>
@@ -240,35 +215,23 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
       </div>
       <div className="editor-tool-divider" />
 
-      {/* Font size */}
       <div className="editor-tool-group">
-        <select
-          title="Font size"
-          className="editor-font-select"
-          onChange={e => editor.chain().focus().setMark('textStyle', { fontSize: e.target.value }).run()}
-          defaultValue=""
-        >
+        <select title="Font size" className="editor-font-select" onChange={e => editor.chain().focus().setMark('textStyle', { fontSize: e.target.value }).run()} defaultValue="">
           <option value="" disabled>Size</option>
           {FONT_SIZES.map(s => <option key={s} value={String(s)}>{s}px</option>)}
         </select>
       </div>
       <div className="editor-tool-divider" />
 
-      {/* Color */}
       <div className="editor-tool-group">
         <label className="editor-tool-btn" title="Text color" style={{ cursor: 'pointer', position: 'relative' }}>
           <span>🎨</span>
-          <input
-            type="color"
-            style={{ position: 'absolute', opacity: 0, width: 24, height: 24, cursor: 'pointer' }}
-            onChange={e => editor.chain().focus().setColor(e.target.value).run()}
-          />
+          <input type="color" style={{ position: 'absolute', opacity: 0, width: 24, height: 24, cursor: 'pointer' }} onChange={e => editor.chain().focus().setColor(e.target.value).run()} />
         </label>
         <ToolBtn title="Remove color" onClick={() => editor.chain().focus().unsetColor().run()}>✕</ToolBtn>
       </div>
       <div className="editor-tool-divider" />
 
-      {/* Alignment */}
       <div className="editor-tool-group">
         <ToolBtn title="Align left" onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })}>⬅</ToolBtn>
         <ToolBtn title="Align center" onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })}>☰</ToolBtn>
@@ -276,7 +239,6 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
       </div>
       <div className="editor-tool-divider" />
 
-      {/* Lists */}
       <div className="editor-tool-group">
         <ToolBtn title="Bullet list" onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')}>• List</ToolBtn>
         <ToolBtn title="Numbered list" onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')}>1. List</ToolBtn>
@@ -285,68 +247,36 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
       </div>
       <div className="editor-tool-divider" />
 
-      {/* Link */}
       <div className="editor-tool-group" style={{ position: 'relative' }}>
         <ToolBtn title="Add link" onClick={() => setShowLink(v => !v)} active={editor.isActive('link')}>🔗</ToolBtn>
         <ToolBtn title="Remove link" onClick={() => editor.chain().focus().unsetLink().run()}>🔗✕</ToolBtn>
         {showLink && (
           <div className="editor-link-popup">
-            <input
-              className="editor-link-input"
-              placeholder="https://..."
-              value={linkUrl}
-              onChange={e => setLinkUrl(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') applyLink();
-                if (e.key === 'Escape') setShowLink(false);
-              }}
-              autoFocus
-            />
+            <input className="editor-link-input" placeholder="https://..." value={linkUrl} onChange={e => setLinkUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') applyLink(); if (e.key === 'Escape') setShowLink(false); }} autoFocus />
             <button type="button" className="editor-link-apply" onClick={applyLink}>Apply</button>
           </div>
         )}
       </div>
       <div className="editor-tool-divider" />
 
-      {/* Image + Video upload */}
       <div className="editor-tool-group">
-        <ToolBtn title="Upload Image" onClick={onImageUpload} disabled={uploading}>
-          {uploading ? '⏳' : '🖼️ Image'}
-        </ToolBtn>
-        <ToolBtn title="Upload Video to Bunny Stream" onClick={onVideoUpload} disabled={uploading}>
-          {uploading ? '⏳' : '🎬 Video'}
-        </ToolBtn>
+        <ToolBtn title="Upload Image" onClick={onImageUpload} disabled={uploading}>{uploading ? '⏳' : '🖼️ Image'}</ToolBtn>
+        <ToolBtn title="Upload Video to Bunny Stream" onClick={onVideoUpload} disabled={uploading}>{uploading ? '⏳' : '🎬 Video'}</ToolBtn>
       </div>
       <div className="editor-tool-divider" />
 
-      {/* Insert Video from sidebar list */}
       {moduleVideos && moduleVideos.length > 0 && (
         <>
           <div className="editor-tool-group" style={{ position: 'relative' }}>
-            <select
-              title="Insert Video"
-              className="editor-font-select"
-              style={{ minWidth: 140, maxWidth: 200 }}
-              value=""
-              onChange={e => {
-                const videoId = e.target.value;
-                if (!videoId || !onInsertVideo) return;
-                const video = moduleVideos.find(v => v.id === videoId);
-                if (video) onInsertVideo(video);
-                e.target.value = '';
-              }}
-            >
+            <select title="Insert Video" className="editor-font-select" style={{ minWidth: 140, maxWidth: 200 }} value="" onChange={e => { const videoId = e.target.value; if (!videoId || !onInsertVideo) return; const video = moduleVideos.find(v => v.id === videoId); if (video) onInsertVideo(video); e.target.value = ''; }}>
               <option value="" disabled>📽️ Insert Video</option>
-              {moduleVideos.map((v, i) => (
-                <option key={v.id} value={v.id}>{i + 1}. {v.title.slice(0, 30)}{v.title.length > 30 ? '…' : ''}</option>
-              ))}
+              {moduleVideos.map((v, i) => <option key={v.id} value={v.id}>{i + 1}. {v.title.slice(0, 30)}{v.title.length > 30 ? '…' : ''}</option>)}
             </select>
           </div>
           <div className="editor-tool-divider" />
         </>
       )}
 
-      {/* History */}
       <div className="editor-tool-group">
         <ToolBtn title="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>↩</ToolBtn>
         <ToolBtn title="Redo" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}>↪</ToolBtn>
@@ -355,7 +285,6 @@ function EditorToolbar({ editor, onImageUpload, onVideoUpload, uploading, module
   );
 }
 
-// ─── Context Menu for Image ───────────────────────────
 interface ContextMenuState {
   visible: boolean;
   x: number;
@@ -363,7 +292,6 @@ interface ContextMenuState {
   imageUrl: string | null;
 }
 
-// ─── Main Block Editor ───────────────────────────────────────
 interface BlockEditorProps {
   content: string;
   onChange: (html: string) => void;
@@ -379,7 +307,6 @@ export default function BlockEditor({
   placeholder,
   readOnly = false,
   moduleVideos = [],
-  isAdmin = false,
 }: BlockEditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -392,10 +319,7 @@ export default function BlockEditor({
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
 
-  // Context menu state
-  const [ctxMenu, setCtxMenu] = useState<ContextMenuState>({
-    visible: false, x: 0, y: 0, imageUrl: null,
-  });
+  const [ctxMenu, setCtxMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, imageUrl: null });
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -407,29 +331,20 @@ export default function BlockEditor({
       FontSize,
       Color,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
-      }),
-      ImageResize.configure({
-        HTMLAttributes: { class: 'editor-img' },
-        allowBase64: true,
-      }),
+      Link.configure({ openOnClick: false, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
+      ImageResize.configure({ HTMLAttributes: { class: 'editor-img' }, allowBase64: true }),
       VideoEmbed,
-      Placeholder.configure({
-        placeholder: placeholder || 'Start writing module content here…',
-      }),
+      Placeholder.configure({ placeholder: placeholder || 'Start writing module content here…' }),
     ],
     content: content || '',
-    editable: !readOnly,
+    editable: !readOnly, // Handles read-only mode internally within TipTap!
     immediatelyRender: false,
     onUpdate: ({ editor }) => {
-      if (isInternalUpdate.current) return;
+      if (isInternalUpdate.current || readOnly) return;
       onChange(editor.getHTML());
     },
   });
 
-  // Sync external content changes
   useEffect(() => {
     if (!editor || readOnly) return;
     const current = editor.getHTML();
@@ -440,14 +355,11 @@ export default function BlockEditor({
     }
   }, [content, editor, readOnly]);
 
-  // ── Click handler on editor content to detect image clicks ──
   useEffect(() => {
     if (!editor || readOnly) return;
 
     function handleEditorClick(e: MouseEvent) {
       const target = e.target as HTMLElement;
-
-      // Check if clicked on an image
       const img = target.closest('img') as HTMLImageElement | null;
       if (img && img.classList.contains('editor-img')) {
         e.preventDefault();
@@ -455,16 +367,9 @@ export default function BlockEditor({
         const wrapRect = editorWrapRef.current?.getBoundingClientRect();
         const x = rect.left - (wrapRect?.left || 0) + rect.width / 2;
         const y = rect.top - (wrapRect?.top || 0) - 8;
-        setCtxMenu({
-          visible: true,
-          x,
-          y,
-          imageUrl: img.src,
-        });
+        setCtxMenu({ visible: true, x, y, imageUrl: img.src });
         return;
       }
-
-      // Close menu if clicking elsewhere
       setCtxMenu(prev => ({ ...prev, visible: false }));
       setDeleteConfirm(false);
     }
@@ -476,7 +381,6 @@ export default function BlockEditor({
     }
   }, [editor, readOnly]);
 
-  // Close context menu on outside click
   useEffect(() => {
     function handleOutsideClick(e: MouseEvent) {
       const target = e.target as HTMLElement;
@@ -489,24 +393,17 @@ export default function BlockEditor({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  // ── Remove image from editor (and optionally delete from Supabase) ──
   async function handleRemoveImage(permanent: boolean) {
-    if (!editor || !ctxMenu.imageUrl) return;
+    if (!editor || !ctxMenu.imageUrl || readOnly) return;
 
     if (permanent) {
       setDeleting(true);
       try {
-        // Extract filename from Supabase URL
         const url = ctxMenu.imageUrl;
         const match = url.match(/module-images\/(.+)$/);
         const filename = match ? match[1] : null;
-
         if (filename) {
-          await fetch('/api/upload-image', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename }),
-          });
+          await fetch('/api/upload-image', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) });
         }
       } catch (err) {
         console.error('Failed to delete from Supabase:', err);
@@ -515,9 +412,7 @@ export default function BlockEditor({
       }
     }
 
-    // Remove from editor
     const html = editor.getHTML();
-    // Remove img tag with this src
     const escapedSrc = ctxMenu.imageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const newHtml = html.replace(new RegExp(`<img[^>]*src="${escapedSrc}"[^>]*>`, 'gi'), '');
     isInternalUpdate.current = true;
@@ -528,57 +423,34 @@ export default function BlockEditor({
     setDeleteConfirm(false);
   }
 
-  const triggerImageUpload = useCallback(() => {
-    imageInputRef.current?.click();
-  }, []);
+  const triggerImageUpload = useCallback(() => { imageInputRef.current?.click(); }, []);
+  const triggerVideoUpload = useCallback(() => { videoInputRef.current?.click(); }, []);
 
-  const triggerVideoUpload = useCallback(() => {
-    videoInputRef.current?.click();
-  }, []);
-
-  // ── Image Upload → Supabase Storage ───────────────────────
   async function handleImageFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !editor) return;
+    if (!file || !editor || readOnly) return;
 
-    setUploading(true);
-    setUploadError('');
-    setUploadSuccess('');
-    setUploadLabel('Uploading image…');
-    setUploadProgress(10);
+    setUploading(true); setUploadError(''); setUploadSuccess('');
+    setUploadLabel('Uploading image…'); setUploadProgress(10);
 
     let lastError = '';
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const fd = new FormData();
-        fd.append('file', file);
-
+        const fd = new FormData(); fd.append('file', file);
         setUploadProgress(20 + attempt * 30);
-        const res = await fetch('/api/upload-image', {
-          method: 'POST',
-          body: fd,
-        });
+        const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
         setUploadProgress(80);
 
-        const contentType = res.headers.get('content-type') || '';
         let data: any = {};
-        if (contentType.includes('application/json')) {
+        if (res.headers.get('content-type')?.includes('application/json')) {
           data = await res.json();
         } else {
-          const text = await res.text();
-          data.error =
-            res.status === 413
-              ? 'Image too large. Max size 10MB.'
-              : `Server error (${res.status})`;
-          console.error('Non-JSON response:', text);
+          data.error = res.status === 413 ? 'Image too large. Max size 10MB.' : `Server error (${res.status})`;
         }
 
         if (!res.ok) {
           lastError = data.error || 'Image upload failed';
-          if (res.status >= 500 && attempt < 1) {
-            setUploadLabel('Retrying upload…');
-            continue;
-          }
+          if (res.status >= 500 && attempt < 1) { setUploadLabel('Retrying upload…'); continue; }
           setUploadError(lastError);
         } else {
           setUploadProgress(100);
@@ -590,38 +462,26 @@ export default function BlockEditor({
         }
         break;
       } catch {
-        lastError = attempt >= 1
-          ? 'Network error. Please check your connection and try again.'
-          : 'Network error. Retrying…';
+        lastError = attempt >= 1 ? 'Network error. Please check your connection and try again.' : 'Network error. Retrying…';
       }
     }
 
     if (lastError) setUploadError(lastError);
-    setUploading(false);
-    setUploadProgress(0);
+    setUploading(false); setUploadProgress(0);
     if (imageInputRef.current) imageInputRef.current.value = '';
   }
 
-  // ── Video Upload → Bunny Stream ────────────────────────────
   async function handleVideoFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !editor) return;
+    if (!file || !editor || readOnly) return;
 
-    setUploading(true);
-    setUploadError('');
-    setUploadSuccess('');
-    setUploadLabel(`Uploading video "${file.name}" to Bunny Stream…`);
-    setUploadProgress(5);
+    setUploading(true); setUploadError(''); setUploadSuccess('');
+    setUploadLabel(`Uploading video "${file.name}" to Bunny Stream…`); setUploadProgress(5);
 
     try {
       const fd = new FormData();
-      fd.append('file', file);
-      fd.append('title', file.name.replace(/\.[^/.]+$/, ''));
-
-      const progressInterval = setInterval(() => {
-        setUploadProgress(p => Math.min(p + 3, 85));
-      }, 800);
-
+      fd.append('file', file); fd.append('title', file.name.replace(/\.[^/.]+$/, ''));
+      const progressInterval = setInterval(() => { setUploadProgress(p => Math.min(p + 3, 85)); }, 800);
       const res = await fetch('/api/bunny/upload-video', { method: 'POST', body: fd });
       clearInterval(progressInterval);
       setUploadProgress(95);
@@ -631,10 +491,7 @@ export default function BlockEditor({
         setUploadError(data.error || 'Video upload failed.');
       } else {
         setUploadProgress(100);
-        editor.chain().focus().insertContent({
-          type: 'videoEmbed',
-          attrs: { src: data.embedUrl }
-        }).run();
+        editor.chain().focus().insertContent({ type: 'videoEmbed', attrs: { src: data.embedUrl } }).run();
         onChange(editor.getHTML());
         setUploadSuccess('✅ Video uploaded to Bunny Stream!');
         setTimeout(() => setUploadSuccess(''), 4000);
@@ -643,108 +500,49 @@ export default function BlockEditor({
       setUploadError('Network error uploading video. Please try again.');
     }
 
-    setUploading(false);
-    setUploadProgress(0);
+    setUploading(false); setUploadProgress(0);
     if (videoInputRef.current) videoInputRef.current.value = '';
   }
 
-  // ── Read-only render ───────────────────────────────────────
-  if (readOnly) {
-    return (
-      <div
-        className="editor-readonly"
-        dangerouslySetInnerHTML={{ __html: content || '' }}
-      />
-    );
-  }
-
+  // Instead of an early return with dangerouslySetInnerHTML, we render the editor in readOnly mode.
+  // This preserves all TipTap React Node views (like iframe video wrappers)!
   return (
-    <div className="block-editor-wrap" ref={editorWrapRef} style={{ position: 'relative' }}>
-      <UploadOverlay
-        visible={uploading}
-        label={uploadLabel}
-        progress={uploadProgress}
-      />
+    <div className={`block-editor-wrap ${readOnly ? 'read-only' : ''}`} ref={editorWrapRef} style={{ position: 'relative', border: readOnly ? 'none' : undefined, minHeight: readOnly ? 'auto' : undefined, boxShadow: readOnly ? 'none' : undefined }}>
+      {!readOnly && <UploadOverlay visible={uploading} label={uploadLabel} progress={uploadProgress} />}
 
-      <EditorToolbar
-        editor={editor}
-        onImageUpload={triggerImageUpload}
-        onVideoUpload={triggerVideoUpload}
-        uploading={uploading}
-        moduleVideos={moduleVideos}
-        onInsertVideo={(video) => {
-          if (!editor) return;
-          editor.chain().focus().insertContent({
-            type: 'videoEmbed',
-            attrs: { src: video.video_url }
-          }).run();
-          onChange(editor.getHTML());
-        }}
-      />
-
-      <EditorContent editor={editor} className="editor-content-area" />
-
-      {/* ── Context Menu for Image/Video ── */}
-      {ctxMenu.visible && (
-        <div
-          className="editor-ctx-menu"
-          style={{
-            position: 'absolute',
-            left: Math.min(ctxMenu.x, (editorWrapRef.current?.offsetWidth || 600) - 220),
-            top: ctxMenu.y,
-            zIndex: 200,
-            background: '#fff',
-            border: '1.5px solid var(--border)',
-            borderRadius: 10,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
-            padding: '6px',
-            minWidth: 200,
-            transform: 'translateX(-50%) translateY(-100%)',
+      {!readOnly && (
+        <EditorToolbar
+          editor={editor}
+          onImageUpload={triggerImageUpload}
+          onVideoUpload={triggerVideoUpload}
+          uploading={uploading}
+          moduleVideos={moduleVideos}
+          onInsertVideo={(video) => {
+            if (!editor) return;
+            editor.chain().focus().insertContent({ type: 'videoEmbed', attrs: { src: video.video_url } }).run();
+            onChange(editor.getHTML());
           }}
-        >
+        />
+      )}
+
+      <EditorContent editor={editor} className={`editor-content-area ${readOnly ? 'editor-readonly' : ''}`} style={readOnly ? { padding: 0, minHeight: 'auto' } : {}} />
+
+      {!readOnly && ctxMenu.visible && (
+        <div className="editor-ctx-menu" style={{ position: 'absolute', left: Math.min(ctxMenu.x, (editorWrapRef.current?.offsetWidth || 600) - 220), top: ctxMenu.y, zIndex: 200, background: '#fff', border: '1.5px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', padding: '6px', minWidth: 200, transform: 'translateX(-50%) translateY(-100%)' }}>
           {ctxMenu.imageUrl && (
             <>
-              <div style={{ padding: '6px 10px', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
-                🖼️ Image Options
-              </div>
-
+              <div style={{ padding: '6px 10px', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, borderBottom: '1px solid var(--border)', marginBottom: 4 }}>🖼️ Image Options</div>
               {!deleteConfirm ? (
                 <>
-                  <button
-                    className="editor-ctx-btn"
-                    onClick={() => handleRemoveImage(false)}
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    🗑️ Remove from content
-                  </button>
-                  <button
-                    className="editor-ctx-btn editor-ctx-btn-danger"
-                    onClick={() => setDeleteConfirm(true)}
-                  >
-                    ❌ Delete permanently (Supabase)
-                  </button>
+                  <button className="editor-ctx-btn" onClick={() => handleRemoveImage(false)} style={{ color: 'var(--text-secondary)' }}>🗑️ Remove from content</button>
+                  <button className="editor-ctx-btn editor-ctx-btn-danger" onClick={() => setDeleteConfirm(true)}>❌ Delete permanently (Supabase)</button>
                 </>
               ) : (
                 <div style={{ padding: '8px 10px' }}>
-                  <p style={{ fontSize: 12, color: '#b91c1c', marginBottom: 8, fontWeight: 600 }}>
-                    ⚠️ This will delete the image from Supabase storage permanently. Are you sure?
-                  </p>
+                  <p style={{ fontSize: 12, color: '#b91c1c', marginBottom: 8, fontWeight: 600 }}>⚠️ This will delete the image from Supabase storage permanently. Are you sure?</p>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      className="editor-ctx-btn editor-ctx-btn-danger"
-                      onClick={() => handleRemoveImage(true)}
-                      disabled={deleting}
-                      style={{ flex: 1, justifyContent: 'center' }}
-                    >
-                      {deleting ? '⏳ Deleting…' : '✓ Yes, Delete'}
-                    </button>
-                    <button
-                      className="editor-ctx-btn"
-                      onClick={() => setDeleteConfirm(false)}
-                      style={{ flex: 1, justifyContent: 'center' }}
-                    >
-                      Cancel
-                    </button>
+                    <button className="editor-ctx-btn editor-ctx-btn-danger" onClick={() => handleRemoveImage(true)} disabled={deleting} style={{ flex: 1, justifyContent: 'center' }}>{deleting ? '⏳ Deleting…' : '✓ Yes, Delete'}</button>
+                    <button className="editor-ctx-btn" onClick={() => setDeleteConfirm(false)} style={{ flex: 1, justifyContent: 'center' }}>Cancel</button>
                   </div>
                 </div>
               )}
@@ -753,31 +551,10 @@ export default function BlockEditor({
         </div>
       )}
 
-      {uploadError && (
-        <div className="editor-status editor-status-error">
-          ❌ {uploadError}
-        </div>
-      )}
-      {uploadSuccess && (
-        <div className="editor-status editor-status-success">
-          {uploadSuccess}
-        </div>
-      )}
-
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={handleImageFile}
-      />
-      <input
-        ref={videoInputRef}
-        type="file"
-        accept="video/*"
-        style={{ display: 'none' }}
-        onChange={handleVideoFile}
-      />
+      {!readOnly && uploadError && <div className="editor-status editor-status-error">❌ {uploadError}</div>}
+      {!readOnly && uploadSuccess && <div className="editor-status editor-status-success">{uploadSuccess}</div>}
+      {!readOnly && <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageFile} />}
+      {!readOnly && <input ref={videoInputRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={handleVideoFile} />}
     </div>
   );
 }
