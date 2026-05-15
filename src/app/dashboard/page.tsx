@@ -1,12 +1,12 @@
+
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
-import dynamic from 'next/dynamic';
+import dynamic from 'next/dynamic'; // Added
 
-// Lazy-load the BlockEditor in read-only mode (no SSR needed for readonly render)
-const BlockEditor = dynamic(() => import('@/components/BlockEditor'), { ssr: false });
+const BlockEditor = dynamic(() => import('@/components/BlockEditor'), { ssr: false }); // Added
 
 type Module = {
   id: string;
