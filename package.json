@@ -12,6 +12,7 @@
     "@fingerprintjs/fingerprintjs": "^4.4.1",
     "@supabase/ssr": "^0.5.1",
     "@supabase/supabase-js": "^2.45.4",
+    "@tiptap/core": "^3.22.5",
     "@tiptap/extension-color": "^3.22.5",
     "@tiptap/extension-image": "^3.22.5",
     "@tiptap/extension-link": "^3.22.5",
@@ -22,12 +23,12 @@
     "@tiptap/pm": "^3.22.5",
     "@tiptap/react": "^3.22.5",
     "@tiptap/starter-kit": "^3.22.5",
-    "@tiptap/core": "^3.22.5",
     "dotenv": "^17.4.2",
     "next": "15.1.11",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "resend": "^4.0.0",
+    "tiptap-extension-resize-image": "^1.4.0",
     "ws": "^8.20.0"
   },
   "devDependencies": {
