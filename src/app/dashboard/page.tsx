@@ -49,9 +49,6 @@ export default function DashboardPage() {
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryMsg, setQueryMsg] = useState('');
 
-  // Tab state for module content vs videos
-  const [contentTab, setContentTab] = useState<'content' | 'videos'>('content');
-
   // ── Auth ──────────────────────────────────────────────────
   useEffect(() => {
     async function loadUser(retries = 3): Promise<void> {
@@ -114,10 +111,9 @@ export default function DashboardPage() {
     loadModules();
   }, []);
 
-  // Reset content tab & active video when module changes
+  // Reset active video when module changes
   useEffect(() => {
     setActiveVideo(null);
-    setContentTab('content');
   }, [activeModule]);
 
   // ── Security Suite ────────────────────────────────────────
@@ -187,7 +183,6 @@ export default function DashboardPage() {
     if (!pendingVideo) return;
     setShowWarning(false);
     setActiveVideo(pendingVideo);
-    setContentTab('videos');
   }
 
   async function handleLogout() {
@@ -232,6 +227,14 @@ export default function DashboardPage() {
   const avatarLetter = user?.email?.[0]?.toUpperCase() ?? '?';
   const activeModuleVideos = activeModule ? (videos[activeModule] || []) : [];
   const activeModuleData = modules.find(m => m.id === activeModule);
+
+  // Robust content detection
+  const contentStr = activeModuleData?.content || '';
+  const cleanText = contentStr.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, '').trim();
+  const hasContent = cleanText !== '' || 
+                     contentStr.includes('<img') || 
+                     contentStr.includes('<iframe') || 
+                     contentStr.includes('<video');
 
   return (
     <div className="dashboard-page">
@@ -322,173 +325,123 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* ── Content / Videos Tabs ── */}
-              <div style={{ display: 'flex', gap: 4, background: 'var(--bg-card-2)', borderRadius: 12, padding: 4, marginBottom: 28, maxWidth: 360 }}>
-                <button
-                  onClick={() => setContentTab('content')}
-                  style={{
-                    flex: 1, padding: '10px 16px', border: 'none',
-                    borderRadius: 9, fontFamily: 'var(--font)', fontSize: 14,
-                    fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                    background: contentTab === 'content' ? 'var(--bg-card)' : 'transparent',
-                    color: contentTab === 'content' ? 'var(--brand-blue-dark)' : 'var(--text-muted)',
-                    boxShadow: contentTab === 'content' ? 'var(--shadow-sm)' : 'none',
-                  }}
-                >
-                  📖 Content
-                </button>
-                <button
-                  onClick={() => setContentTab('videos')}
-                  style={{
-                    flex: 1, padding: '10px 16px', border: 'none',
-                    borderRadius: 9, fontFamily: 'var(--font)', fontSize: 14,
-                    fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                    background: contentTab === 'videos' ? 'var(--bg-card)' : 'transparent',
-                    color: contentTab === 'videos' ? 'var(--brand-blue-dark)' : 'var(--text-muted)',
-                    boxShadow: contentTab === 'videos' ? 'var(--shadow-sm)' : 'none',
-                  }}
-                >
-                  🎬 Videos ({activeModuleVideos.length})
-                </button>
+              {/* ── Module Rich Content (BlockEditor readonly) ── */}
+              <div style={{ marginBottom: 32 }}>
+                <h2 className="section-title" style={{ marginBottom: 16 }}>📖 Module Content</h2>
+                {hasContent ? (
+                  <div
+                    style={{
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '32px 36px',
+                      boxShadow: 'var(--shadow-sm)',
+                    }}
+                  >
+                    <BlockEditor
+                      content={contentStr}
+                      onChange={() => {}}   // no-op — student cannot edit
+                      readOnly={true}
+                    />
+                  </div>
+                ) : (
+                  <div className="empty-state" style={{ minHeight: 120, padding: 24 }}>
+                    <p style={{ color: 'var(--text-muted)', margin: 0 }}>
+                      No written content available for this module yet.
+                    </p>
+                  </div>
+                )}
               </div>
 
-              {/* ── TAB: CONTENT ── */}
-              {contentTab === 'content' && (() => {
-                // Better hasContent detection
-                const contentStr = activeModuleData.content || '';
-                const hasContent = contentStr && (
-                  contentStr.replace(/<[^>]*>/g, '').trim() !== '' ||
-                  contentStr.includes('<img') ||
-                  contentStr.includes('<iframe') ||
-                  contentStr.includes('<video')
-                );
-
-                return (
-                  <div>
-                    {hasContent ? (
-                      <div style={{
-                        background: 'var(--bg-card)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 16,
-                        padding: '32px 36px',
-                        boxShadow: 'var(--shadow-sm)',
-                        lineHeight: 1.8,
-                        fontSize: 15,
-                        color: 'var(--text-primary)',
-                      }}>
-                        <BlockEditor 
-                          content={activeModuleData.content} 
-                          onChange={() => {}} 
-                          readOnly={true} 
-                        />
-                      </div>
-                    ) : (
-                      <div className="empty-state" style={{ minHeight: 260 }}>
-                        <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
-                        <p style={{ color: 'var(--text-muted)' }}>
-                          No written content for this module yet. Check the Videos tab for lessons!
-                        </p>
-                      </div>
-                    )}
+              {/* ── Video Player ── */}
+              {activeVideo && (
+                <div className="video-player-container" style={{ marginBottom: 32 }}>
+                  <div className="video-player-header">
+                    <span style={{ fontSize: 22 }}>🎬</span>
+                    <h3>{activeVideo.title}</h3>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      style={{ marginLeft: 'auto', fontSize: 12 }}
+                      onClick={() => setActiveVideo(null)}
+                    >
+                      ✕ Close
+                    </button>
                   </div>
-                );
-              })()}
-
-              {/* ── TAB: VIDEOS ── */}
-              {contentTab === 'videos' && (
-                <div>
-                  {/* Active Video Player */}
-                  {activeVideo ? (
-                    <div className="video-player-container" style={{ marginBottom: 28 }}>
-                      <div className="video-player-header">
-                        <span style={{ fontSize: 22 }}>🎬</span>
-                        <h3>{activeVideo.title}</h3>
-                        <button
-                          className="btn btn-sm btn-ghost"
-                          style={{ marginLeft: 'auto', fontSize: 12 }}
-                          onClick={() => setActiveVideo(null)}
-                        >
-                          ✕ Close
-                        </button>
-                      </div>
-                      <div className="video-player-body">
-                        <div className="video-player-frame" style={{ position: 'relative' }}>
-                          <iframe
-                            id="course-video-player"
-                            src={getDriveEmbedUrl(activeVideo.video_url)}
-                            allowFullScreen
-                            allow="encrypted-media; autoplay"
-                            title={activeVideo.title}
-                            style={{ width: '100%', height: '100%', border: 'none' }}
-                          />
-                          {/* Floating Watermark */}
-                          {isMounted && (
-                            <div
-                              style={{
-                                position: 'absolute',
-                                top: `${wmPos.y}%`,
-                                left: `${wmPos.x}%`,
-                                pointerEvents: 'none',
-                                zIndex: 10,
-                                transition: 'top 2s ease-in-out, left 2s ease-in-out',
-                                userSelect: 'none',
-                                whiteSpace: 'nowrap',
-                                color: 'rgba(255, 255, 255, 0.38)',
-                                fontSize: 13,
-                                fontWeight: 700,
-                                letterSpacing: 1,
-                                textShadow: '0 1px 8px rgba(0,0,0,0.9)',
-                                fontFamily: 'monospace',
-                                padding: '3px 8px',
-                                borderRadius: 4,
-                                background: 'rgba(0,0,0,0.25)',
-                              }}
-                            >
-                              🔒 {user?.email}
-                            </div>
-                          )}
-                        </div>
-                        <p style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
-                          ⚠️ This content is exclusively licensed to {user?.email}. Recording or sharing is strictly prohibited.
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="video-placeholder-large" style={{ marginBottom: 28 }}>
-                      <div style={{ fontSize: 56 }}>▶️</div>
-                      <p>Select a video below to start learning</p>
-                    </div>
-                  )}
-
-                  {/* Video List */}
-                  {activeModuleVideos.length === 0 ? (
-                    <div className="empty-state">
-                      <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-                      <p>No videos uploaded yet for this module. Check back soon!</p>
-                    </div>
-                  ) : (
-                    <div className="lesson-list">
-                      {activeModuleVideos.map((v, i) => (
+                  <div className="video-player-body">
+                    <div className="video-player-frame" style={{ position: 'relative' }}>
+                      <iframe
+                        id="course-video-player"
+                        src={getDriveEmbedUrl(activeVideo.video_url)}
+                        allowFullScreen
+                        allow="encrypted-media; autoplay"
+                        title={activeVideo.title}
+                        style={{ width: '100%', height: '100%', border: 'none' }}
+                      />
+                      {/* Floating Watermark */}
+                      {isMounted && (
                         <div
-                          key={v.id}
-                          className={`lesson-item ${activeVideo?.id === v.id ? 'active' : ''}`}
-                          onClick={() => handleVideoSelect(v)}
+                          style={{
+                            position: 'absolute',
+                            top: `${wmPos.y}%`,
+                            left: `${wmPos.x}%`,
+                            pointerEvents: 'none',
+                            zIndex: 10,
+                            transition: 'top 2s ease-in-out, left 2s ease-in-out',
+                            userSelect: 'none',
+                            whiteSpace: 'nowrap',
+                            color: 'rgba(255, 255, 255, 0.38)',
+                            fontSize: 13,
+                            fontWeight: 700,
+                            letterSpacing: 1,
+                            textShadow: '0 1px 8px rgba(0,0,0,0.9)',
+                            fontFamily: 'monospace',
+                            padding: '3px 8px',
+                            borderRadius: 4,
+                            background: 'rgba(0,0,0,0.25)',
+                          }}
                         >
-                          <div className="lesson-num">{i + 1}</div>
-                          <div className="lesson-info">
-                            <div className="lesson-title">{v.title}</div>
-                            <div className="lesson-meta">🔐 Protected · Click to play</div>
-                          </div>
-                          <button className="lesson-play-btn">▶</button>
+                          🔒 {user?.email}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
+                    <p style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+                      ⚠️ This content is exclusively licensed to {user?.email}. Recording or sharing is strictly prohibited.
+                    </p>
+                  </div>
                 </div>
               )}
 
+              {/* ── Video Lesson List ── */}
+              <div style={{ marginBottom: 32 }}>
+                <h2 className="section-title">🎬 Lessons in this Module</h2>
+                {activeModuleVideos.length === 0 ? (
+                  <div className="empty-state" style={{ minHeight: 120, padding: 24 }}>
+                    <p style={{ color: 'var(--text-muted)', margin: 0 }}>
+                      No videos uploaded yet for this module. Check back soon!
+                    </p>
+                  </div>
+                ) : (
+                  <div className="lesson-list">
+                    {activeModuleVideos.map((v, i) => (
+                      <div
+                        key={v.id}
+                        className={`lesson-item ${activeVideo?.id === v.id ? 'active' : ''}`}
+                        onClick={() => handleVideoSelect(v)}
+                      >
+                        <div className="lesson-num">{i + 1}</div>
+                        <div className="lesson-info">
+                          <div className="lesson-title">{v.title}</div>
+                          <div className="lesson-meta">🔐 Protected · Click to play</div>
+                        </div>
+                        <button className="lesson-play-btn">▶</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* ── Student Query Section ── */}
-              <div className="query-section" style={{ marginTop: 40 }}>
+              <div className="query-section">
                 <h2 className="section-title">💬 Ask a Question</h2>
                 <p style={{ color: 'var(--text-secondary)', marginBottom: 20, fontSize: 14 }}>
                   Have a question about <strong>{activeModuleData.title}</strong>? Submit it below and our team will get back to you.
