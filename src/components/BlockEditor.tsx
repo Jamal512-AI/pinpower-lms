@@ -3,7 +3,7 @@
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
-import Image from '@tiptap/extension-image'; // replaces missing tiptap-extension-resize-image
+import Image from '@tiptap/extension-image';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import Underline from '@tiptap/extension-underline';
@@ -11,7 +11,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import TextAlign from '@tiptap/extension-text-align';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Extension, Node } from '@tiptap/core';
-import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
+import { ReactNodeViewRenderer, NodeViewWrapper, NodeViewProps } from '@tiptap/react';
 
 // ─── Video Embed Extension ──────────────────────────────────
 export const VideoEmbed = Node.create({
@@ -75,15 +75,7 @@ export const VideoEmbed = Node.create({
 });
 
 // Separate component to avoid stale closure on editor.isEditable
-function VideoEmbedView({
-  node,
-  editor,
-  deleteNode,
-}: {
-  node: { attrs: { src: string } };
-  editor: Editor;
-  deleteNode: () => void;
-}) {
+function VideoEmbedView({ node, editor, deleteNode }: NodeViewProps) {
   const [hover, setHover] = useState(false);
   const isEditable = editor.isEditable;
 
@@ -611,7 +603,7 @@ export default function BlockEditor({
         openOnClick: false,
         HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
       }),
-      // ✅ Fixed: use @tiptap/extension-image (was tiptap-extension-resize-image which was missing from package.json)
+      // Native TipTap image extension used here
       Image.configure({
         HTMLAttributes: { class: 'editor-img' },
         allowBase64: true,
@@ -628,21 +620,17 @@ export default function BlockEditor({
     onUpdate: ({ editor }) => {
       if (isInternalUpdate.current || readOnly) return;
       const html = editor.getHTML();
-      lastSyncedContent.current = html; // keep ref in sync
+      lastSyncedContent.current = html;
       onChange(html);
     },
   });
 
-  // ✅ Fixed: sync content prop → editor for BOTH edit and readOnly modes.
-  // Previously readOnly mode was skipped, causing stale content when switching modules.
   useEffect(() => {
     if (!editor) return;
 
-    // Only update if content actually changed from what we last set
     if (content === lastSyncedContent.current) return;
 
     const currentHtml = editor.getHTML();
-    // Normalise empty states
     const incomingIsEmpty = !content || content === '<p></p>';
     const editorIsEmpty = !currentHtml || currentHtml === '<p></p>';
 
@@ -760,7 +748,6 @@ export default function BlockEditor({
         const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
         setUploadProgress(80);
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let data: any = {};
         if (res.headers.get('content-type')?.includes('application/json')) {
           data = await res.json();
