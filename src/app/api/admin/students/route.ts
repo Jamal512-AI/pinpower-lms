@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminSupabaseClient } from '@/lib/supabase-server';
+import { createAdminSupabaseClient, createServerSupabaseClient } from '@/lib/supabase-server';
 
-// GET — list all students (non-admin)
+async function checkAdmin() {
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { data: profile } = await supabase.from('users_extended').select('role').eq('id', user.id).single();
+  return profile?.role === 'admin';
+}
+
 export async function GET() {
   try {
+    if (!(await checkAdmin())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
     const supabase = await createAdminSupabaseClient();
     const { data: students, error } = await supabase
       .from('users_extended')
@@ -18,9 +27,10 @@ export async function GET() {
   }
 }
 
-// PATCH — approve or reject a student
 export async function PATCH(req: NextRequest) {
   try {
+    if (!(await checkAdmin())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
     const { studentId, action } = await req.json();
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
 
